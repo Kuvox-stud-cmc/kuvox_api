@@ -1,0 +1,63 @@
+## .NET / C#
+bin/
+obj/
+publish/
+
+## User-specific files
+*.user
+*.userosscache
+*.suo
+
+## VS Code
+.vscode/
+*.code-workspace
+
+## Visual Studio
+.vs/
+*.sln.docstates
+
+## Rider
+.idea/
+
+## Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+artifacts/
+
+## NuGet
+*.nupkg
+*.snupkg
+.nuget/
+nuget.config
+
+## Test results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+TestResult.xml
+coverage/
+
+## OS files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+## Environment
+.env
+.env.*
+!.env.example
+
+## Docker
+docker-compose.override.yml
+
+## Misc
+*.swp
+*.swo
+*~
