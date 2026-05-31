@@ -54,8 +54,8 @@ jobs:
       - name: Deploy to Droplet
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.DROPLET_HOST }}
-          username: ${{ secrets.DROPLET_USER }}
+          host: ${{ vars.DROPLET_HOST }}
+          username: ${{ vars.DROPLET_USER }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
           script: |
             cd /opt/kuvox
