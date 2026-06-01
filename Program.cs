@@ -10,16 +10,41 @@ using Kuvox.Api.Modules.Videos.Repositories;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
+using Serilog;
+using Serilog.Formatting.Compact;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Structured logging (ABOUT.md goal). Levels/overrides are config-driven (appsettings
+// "Serilog" section) so ops can tune without a redeploy; only the console *format* is
+// environment-selected here — readable text in Development, compact JSON elsewhere —
+// because mixing both via merged appsettings produces an ambiguous sink config.
+builder.Services.AddSerilog((sp, lc) =>
+{
+    lc.ReadFrom.Configuration(builder.Configuration)
+        .ReadFrom.Services(sp)
+        .Enrich.FromLogContext();
+
+    if (builder.Environment.IsDevelopment())
+    {
+        lc.WriteTo.Console();
+    }
+    else
+    {
+        lc.WriteTo.Console(new CompactJsonFormatter());
+    }
+});
 
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddControllers();
 
-// Honest 501s for the scaffolded-but-unimplemented "real" endpoints.
+// Honest 501s for the scaffolded-but-unimplemented "real" endpoints. Order matters:
+// the specific NotImplemented handler runs first, then GlobalExceptionHandler catches
+// everything else with an RFC 7807 500.
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<NotImplementedExceptionHandler>();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 // Cross-module events (Rule 4): scan this assembly for INotificationHandler<>.
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(AuthModule).Assembly));
@@ -55,6 +80,10 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 var app = builder.Build();
 
 app.UseForwardedHeaders();
+
+// One structured log line per request (method, path, status, elapsed).
+app.UseSerilogRequestLogging();
+
 app.UseExceptionHandler();
 
 // Configure the HTTP request pipeline.
