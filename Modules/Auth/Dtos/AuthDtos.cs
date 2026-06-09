@@ -5,7 +5,7 @@ public sealed record RegisterRequest(string Email, string Password, string Displ
 
 public sealed record LoginRequest(string Email, string Password);
 
-public sealed record UserDto(Guid Id, string Email, string DisplayName, string Role, DateTimeOffset CreatedAt);
+public sealed record UserDto(Guid Id, string Email, string DisplayName, string Role, string Plan, DateTimeOffset CreatedAt);
 
 /// <summary>Issued JWT pair returned on login/refresh.</summary>
 public sealed record AuthTokenDto(string AccessToken, string RefreshToken, DateTimeOffset ExpiresAt);

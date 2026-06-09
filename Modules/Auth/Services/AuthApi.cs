@@ -18,4 +18,10 @@ internal sealed class AuthApi(IUserRepository users) : IAuthApi
         var user = await users.GetByIdAsync(userId, cancellationToken);
         return user is null ? null : new UserSummary(user.Id, user.Email, user.DisplayName);
     }
+
+    public async Task<UserSummary?> GetSummaryByEmailAsync(string email, CancellationToken cancellationToken = default)
+    {
+        var user = await users.GetByEmailAsync(email.Trim().ToLowerInvariant(), cancellationToken);
+        return user is null ? null : new UserSummary(user.Id, user.Email, user.DisplayName);
+    }
 }

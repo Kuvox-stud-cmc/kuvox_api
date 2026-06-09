@@ -44,6 +44,9 @@ namespace Kuvox.Api.Modules.Timelines.Repositories.Migrations
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
 
@@ -133,6 +136,9 @@ namespace Kuvox.Api.Modules.Timelines.Repositories.Migrations
 
                     b.Property<Guid>("TimelineId")
                         .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
