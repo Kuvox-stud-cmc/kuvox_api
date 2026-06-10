@@ -1,3 +1,4 @@
+using DotNetEnv;
 using Kuvox.Api.Modules.Auth;
 using Kuvox.Api.Modules.Auth.Repositories;
 using Kuvox.Api.Modules.Auth.Services;
