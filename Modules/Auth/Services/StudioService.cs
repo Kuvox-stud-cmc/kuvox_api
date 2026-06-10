@@ -1,6 +1,7 @@
 using Kuvox.Api.Modules.Auth.Dtos;
 using Kuvox.Api.Modules.Auth.Enums;
 using Kuvox.Api.Modules.Auth.Models;
+using Kuvox.Api.Modules.Auth.Contracts;
 using Kuvox.Api.Modules.Auth.Repositories;
 using Kuvox.Api.Modules.Shared.Infrastructure;
 
@@ -10,7 +11,7 @@ namespace Kuvox.Api.Modules.Auth.Services;
 /// Default <see cref="IStudioService"/>. Resolves invitees by email through the user
 /// repository, and authorizes against persisted memberships. Internal (Rule 1).
 /// </summary>
-internal sealed class StudioService(IStudioRepository studios, IUserRepository users) : IStudioService
+internal sealed class StudioService(IStudioRepository studios, IUserRepository users, MediatR.IMediator mediator) : IStudioService
 {
     public async Task<IReadOnlyList<StudioDto>> ListMineAsync(Guid callerUserId, CancellationToken cancellationToken = default)
     {
@@ -34,6 +35,30 @@ internal sealed class StudioService(IStudioRepository studios, IUserRepository u
         await studios.SaveChangesAsync(cancellationToken);
 
         return new StudioDto(studio.Id, studio.Name, UserStudioRole.Admin);
+    }
+
+    public async Task<StudioDto> RenameAsync(Guid studioID, Guid callerUserID, RenameStudioRequest request, CancellationToken cancellationToken = default) 
+    {
+        await RequireAdminAsync(studioID, callerUserID, cancellationToken);
+        var newName = request.Name.Trim();
+        if (newName.Length == 0) throw DomainException.BadRequest("Studio name is required");
+        var studio = await studios.GetByIdAsync(studioID, cancellationToken) ?? throw DomainException.NotFound("Studio not found");
+
+        studio.Name = newName;
+        studio.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await studios.SaveChangesAsync(cancellationToken);
+
+        return new StudioDto(studio.Id, studio.Name, UserStudioRole.Admin);
+    }
+
+    public async Task DeleteAsync(Guid studioId, Guid callerUserId, CancellationToken cancellationToken = default) {
+        await RequireAdminAsync(studioId, callerUserId, cancellationToken);
+        var studio = await studios.GetByIdAsync(studioId, cancellationToken) ?? throw DomainException.NotFound("Studio not found");
+
+        studios.RemoveStudio(studio);
+        await studios.SaveChangesAsync(cancellationToken);
+        await mediator.Publish(new StudioDeletedEvent(studioId), cancellationToken);
     }
 
     public async Task<IReadOnlyList<StudioMemberDto>> ListMembersAsync(

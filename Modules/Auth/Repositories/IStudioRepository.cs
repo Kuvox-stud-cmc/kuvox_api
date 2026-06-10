@@ -25,4 +25,6 @@ internal interface IStudioRepository
     void RemoveMembership(UserStudio membership);
 
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
+
+    void RemoveStudio(Studio studio);
 }

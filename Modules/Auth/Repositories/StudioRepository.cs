@@ -52,4 +52,6 @@ internal sealed class StudioRepository(AuthDbContext db) : IStudioRepository
 
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);
+
+    public void RemoveStudio(Studio studio) => db.Studios.Remove(studio);
 }

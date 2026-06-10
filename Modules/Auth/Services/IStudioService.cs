@@ -27,4 +27,10 @@ public interface IStudioService
 
     /// <summary>Removes a member (Admin-only; cannot remove the last Admin).</summary>
     Task RemoveMemberAsync(Guid studioId, Guid callerUserId, Guid targetUserId, CancellationToken cancellationToken = default);
+
+    /// <summary>Renames a studio (Admin-only).</summary>
+    Task<StudioDto> RenameAsync(Guid studioId, Guid callerUserId, RenameStudioRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>Deletes a studio and all associated data (Admin-only).</summary>
+    Task DeleteAsync(Guid studioId, Guid callerUserId, CancellationToken cancellationToken = default);
 }
