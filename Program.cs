@@ -1,12 +1,14 @@
+using DotNetEnv;
 using Kuvox.Api.Modules.Auth;
 using Kuvox.Api.Modules.Auth.Repositories;
+using Kuvox.Api.Modules.Auth.Services;
 using Kuvox.Api.Modules.Projects;
 using Kuvox.Api.Modules.Projects.Repositories;
 using Kuvox.Api.Modules.Shared.Infrastructure;
 using Kuvox.Api.Modules.Timelines;
 using Kuvox.Api.Modules.Timelines.Repositories;
-using Kuvox.Api.Modules.Videos;
-using Kuvox.Api.Modules.Videos.Repositories;
+using Kuvox.Api.Modules.Media;
+using Kuvox.Api.Modules.Media.Repositories;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
@@ -39,11 +41,12 @@ builder.Services.AddSerilog((sp, lc) =>
 builder.Services.AddOpenApi();
 builder.Services.AddControllers();
 
-// Honest 501s for the scaffolded-but-unimplemented "real" endpoints. Order matters:
-// the specific NotImplemented handler runs first, then GlobalExceptionHandler catches
-// everything else with an RFC 7807 500.
+// Exception handlers run in registration order; the first to claim an exception wins, so the
+// specific ones (501 scaffolds, auth 401/4xx, domain 4xx) precede the catch-all 500.
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<NotImplementedExceptionHandler>();
+builder.Services.AddExceptionHandler<AuthExceptionHandler>();
+builder.Services.AddExceptionHandler<DomainExceptionHandler>();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 // Cross-module events (Rule 4): scan this assembly for INotificationHandler<>.
@@ -53,8 +56,11 @@ builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(AuthM
 builder.Services
     .AddAuthModule(builder.Configuration)
     .AddProjectsModule(builder.Configuration)
-    .AddVideosModule(builder.Configuration)
+    .AddMediaModule(builder.Configuration)
     .AddTimelinesModule(builder.Configuration);
+
+// Cross-module maintenance: hourly auto-purge of >7-day-old Trash (plan §2).
+builder.Services.AddHostedService<TrashPurgeService>();
 
 const string FrontendCorsPolicy = "FrontendCors";
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
@@ -101,6 +107,9 @@ app.UseHttpsRedirection();
 
 app.UseCors(FrontendCorsPolicy);
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapControllers();
 
 app.Run();
@@ -114,7 +123,7 @@ internal static class StartupExtensions
         var sp = scope.ServiceProvider;
         await sp.GetRequiredService<AuthDbContext>().Database.MigrateAsync();
         await sp.GetRequiredService<ProjectsDbContext>().Database.MigrateAsync();
-        await sp.GetRequiredService<VideosDbContext>().Database.MigrateAsync();
+        await sp.GetRequiredService<MediaDbContext>().Database.MigrateAsync();
         await sp.GetRequiredService<TimelinesDbContext>().Database.MigrateAsync();
     }
 }

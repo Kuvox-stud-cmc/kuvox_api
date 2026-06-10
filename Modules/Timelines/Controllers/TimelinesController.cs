@@ -1,5 +1,6 @@
 using Kuvox.Api.Modules.Timelines.Dtos;
 using Kuvox.Api.Modules.Timelines.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Kuvox.Api.Modules.Timelines.Controllers;
@@ -8,6 +9,7 @@ namespace Kuvox.Api.Modules.Timelines.Controllers;
 /// Real Timelines endpoints, backed by the not-yet-implemented <see cref="ITimelineService"/>
 /// (returns <c>501</c>). Use <c>/api/mock/timelines</c> for working fake data.
 /// </summary>
+[Authorize]
 [ApiController]
 [Route("api/timelines")]
 [Produces("application/json")]

@@ -11,4 +11,10 @@ public interface IAuthApi
 
     /// <summary>Returns a minimal, shareable view of a user, or <c>null</c> if not found.</summary>
     Task<UserSummary?> GetSummaryAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resolves a user by email for sharing flows (look up an invitee). Email is matched
+    /// case-insensitively. Returns <c>null</c> if no such user exists.
+    /// </summary>
+    Task<UserSummary?> GetSummaryByEmailAsync(string email, CancellationToken cancellationToken = default);
 }

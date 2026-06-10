@@ -11,6 +11,4 @@ public sealed class Timeline : BaseEntity
     public required Guid ProjectId { get; set; }
 
     public required string Name { get; set; }
-
-    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

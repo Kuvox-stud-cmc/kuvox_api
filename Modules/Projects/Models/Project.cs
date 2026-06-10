@@ -1,3 +1,4 @@
+using Kuvox.Api.Modules.Projects.Enums;
 using Kuvox.Api.Modules.Shared.Models;
 
 namespace Kuvox.Api.Modules.Projects.Models;
@@ -6,11 +7,15 @@ namespace Kuvox.Api.Modules.Projects.Models;
 public sealed class Project : BaseEntity
 {
     /// <summary>
-    /// Owning user. Stored as a bare id — there is NO cross-schema FK to <c>auth.users</c>
-    /// and no EF navigation across modules (Rule 1 / Rule 3). Existence is checked via
-    /// <c>IAuthApi</c> when needed (Rule 2).
+    /// Owning workspace id (user or studio; see <see cref="OwnerKind"/>). Stored as a bare id —
+    /// there is NO cross-schema FK to <c>auth.users</c>/<c>auth.studios</c> and no EF navigation
+    /// across modules (Rule 1 / Rule 3). Existence is checked via <c>IAuthApi</c> when needed (Rule 2).
     /// </summary>
     public required Guid OwnerId { get; set; }
+
+    public required OwnerKind OwnerKind { get; set; }
+
+    public required ProjectKind Kind { get; set; }
 
     public required string Name { get; set; }
 
@@ -18,5 +23,6 @@ public sealed class Project : BaseEntity
 
     public string Status { get; set; } = "draft";
 
-    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    /// <summary>Soft-delete timestamp; non-null means the project is in Trash.</summary>
+    public DateTimeOffset? DeletedAt { get; set; }
 }

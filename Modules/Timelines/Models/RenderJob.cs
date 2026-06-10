@@ -17,6 +17,4 @@ public sealed class RenderJob : BaseEntity
 
     /// <summary>Object-storage key of the rendered output once completed.</summary>
     public string? OutputStorageKey { get; set; }
-
-    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

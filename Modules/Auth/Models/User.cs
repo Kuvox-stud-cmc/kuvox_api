@@ -1,5 +1,5 @@
 using Kuvox.Api.Modules.Shared.Models;
-
+using Kuvox.Api.Modules.Auth.Enums;
 namespace Kuvox.Api.Modules.Auth.Models;
 
 /// <summary>A registered Kuvox user. Owned by the Auth module (table <c>auth.users</c>).</summary>
@@ -11,6 +11,5 @@ public sealed class User : BaseEntity
 
     public required string DisplayName { get; set; }
 
-    /// <summary>Coarse role claim, e.g. "user" or "admin".</summary>
-    public string Role { get; set; } = "user";
+    public UserPlan Plan { get; set; } = UserPlan.Free;
 }

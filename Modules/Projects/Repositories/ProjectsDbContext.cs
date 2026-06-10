@@ -1,3 +1,4 @@
+using Kuvox.Api.Modules.Projects.Enums;
 using Kuvox.Api.Modules.Projects.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,6 +11,8 @@ public sealed class ProjectsDbContext(DbContextOptions<ProjectsDbContext> option
 
     public DbSet<Project> Projects => Set<Project>();
 
+    public DbSet<ProjectUser> ProjectUsers => Set<ProjectUser>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema(Schema);
@@ -18,11 +21,28 @@ public sealed class ProjectsDbContext(DbContextOptions<ProjectsDbContext> option
         {
             entity.ToTable("projects");
             entity.HasKey(p => p.Id);
+            entity.Property(p => p.OwnerKind).HasConversion<string>().HasMaxLength(32).IsRequired();
+            entity.Property(p => p.Kind).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(p => p.Name).HasMaxLength(200).IsRequired();
             entity.Property(p => p.Description).HasMaxLength(2000);
             entity.Property(p => p.Status).HasMaxLength(32).IsRequired();
-            // OwnerId references auth.users by id only — no cross-schema FK (Rule 1/3).
+            // OwnerId references auth.users/auth.studios by id only — no cross-schema FK (Rule 1/3).
             entity.HasIndex(p => p.OwnerId);
+            entity.HasIndex(p => new { p.OwnerKind, p.OwnerId });
+            entity.HasIndex(p => p.DeletedAt);
+        });
+
+        modelBuilder.Entity<ProjectUser>(entity =>
+        {
+            entity.ToTable("project_users");
+            entity.HasKey(pu => new { pu.ProjectId, pu.UserId });
+            entity.Property(pu => pu.Role).HasConversion<string>().HasMaxLength(32).IsRequired();
+            entity.HasIndex(pu => pu.UserId);
+
+            entity.HasOne<Project>()
+                .WithMany()
+                .HasForeignKey(pu => pu.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         base.OnModelCreating(modelBuilder);
