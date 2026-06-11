@@ -13,4 +13,8 @@ public sealed record StudioMemberDto(Guid UserId, string Email, string DisplayNa
 /// <summary>Adds an existing user (looked up by email) to a studio.</summary>
 public sealed record AddStudioMemberRequest(string Email, UserStudioRole Role);
 
+/// <summary>Updates the role of an existing member (Admin-only).</summary>
 public sealed record UpdateStudioMemberRequest(UserStudioRole Role);
+
+/// <summary>Renames a studio (Admin-only).</summary>
+public sealed record RenameStudioRequest(string Name);

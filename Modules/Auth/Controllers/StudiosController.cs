@@ -46,6 +46,17 @@ public sealed class StudiosController(IStudioService studios) : ControllerBase
         return NoContent();
     }
 
+    [HttpPatch("studios/{studioId:guid}")]
+    public Task<StudioDto> RenameStudio(Guid studioId, [FromBody] RenameStudioRequest request, CancellationToken ct) =>
+        studios.RenameAsync(studioId, CallerId(), request, ct);
+
+    [HttpDelete("studios/{studioId:guid}")]
+    public async Task<IActionResult> DeleteStudio(Guid studioId, CancellationToken ct)
+    {
+        await studios.DeleteAsync(studioId, CallerId(), ct);
+        return NoContent();
+    }
+
     private Guid CallerId() =>
         User.GetUserId() ?? throw DomainException.Forbidden("Invalid token.");
 }
