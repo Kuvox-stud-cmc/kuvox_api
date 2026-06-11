@@ -15,6 +15,10 @@ using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Formatting.Compact;
 
+// Load a local .env file if present (no-op in Docker where env vars are injected
+// directly via env_file). Lets `.env` work for non-containerized dev too.
+Env.TraversePath().Load();
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Structured logging (ABOUT.md goal). Levels/overrides are config-driven (appsettings
@@ -92,16 +96,18 @@ app.UseSerilogRequestLogging();
 
 app.UseExceptionHandler();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+// OpenAPI + Scalar docs. Served in every environment (gated by config flag
+// "Api:EnableDocs", default true) so the deployed instance exposes docs without
+// having to run as Development.
+if (app.Configuration.GetValue("Api:EnableDocs", true))
 {
     app.MapOpenApi();
     app.MapScalarApiReference();
-
-    // Apply every module's migrations on startup so `docker compose up` + `dotnet run`
-    // yields a fully schema'd database with no manual `dotnet ef` steps in dev.
-    await app.MigrateModulesAsync();
 }
+
+// Apply every module's migrations on startup so `docker compose up` + `dotnet run`
+// yields a fully schema'd database with no manual `dotnet ef` steps in any env.
+await app.MigrateModulesAsync();
 
 app.UseHttpsRedirection();
 
