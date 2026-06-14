@@ -19,4 +19,12 @@ public interface IAuthService
     Task LogoutAsync(string refreshToken, CancellationToken cancellationToken = default);
 
     Task<UserDto?> GetCurrentUserAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    Task VerifyEmailAsync(string token, CancellationToken cancellationToken = default);
+
+    Task ResendVerificationAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    Task ForgotPasswordAsync(string email, CancellationToken cancellationToken = default);
+
+    Task ResetPasswordAsync(string token, string newPassword, CancellationToken cancellationToken = default);
 }

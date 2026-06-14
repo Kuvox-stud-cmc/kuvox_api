@@ -20,6 +20,8 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
+    public DbSet<AuthToken> AuthTokens => Set<AuthToken>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema(Schema);
@@ -33,6 +35,7 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
             entity.Property(u => u.PasswordHash).IsRequired();
             entity.Property(u => u.DisplayName).HasMaxLength(128).IsRequired();
             entity.Property(u => u.Plan).HasConversion<string>().HasMaxLength(32).IsRequired();
+            entity.Property(u => u.EmailVerifiedAt);
         });
 
         modelBuilder.Entity<Studio>(entity =>
@@ -71,6 +74,22 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
             entity.HasOne<User>()
                 .WithMany()
                 .HasForeignKey(rt => rt.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AuthToken>(entity =>
+        {
+            entity.ToTable("auth_tokens");
+            entity.HasKey(at => at.Id);
+            entity.Property(at => at.Purpose).HasConversion<string>().HasMaxLength(32).IsRequired();
+            entity.Property(at => at.TokenHash).HasMaxLength(128).IsRequired();
+            entity.HasIndex(at => at.TokenHash).IsUnique();
+            entity.HasIndex(at => new { at.UserId, at.Purpose });
+            entity.Ignore(at => at.IsActive);
+
+            entity.HasOne<User>()
+                .WithMany()
+                .HasForeignKey(at => at.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

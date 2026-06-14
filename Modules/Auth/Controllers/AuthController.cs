@@ -50,4 +50,42 @@ public sealed class AuthController(IAuthService auth) : ControllerBase
         var user = await auth.GetCurrentUserAsync(userId, ct);
         return user is null ? NotFound() : Ok(user);
     }
+
+    [HttpPost("verify-email")]
+    public async Task<IActionResult> VerifyEmail(VerifyEmailRequest request, CancellationToken ct)
+    {
+        await auth.VerifyEmailAsync(request.Token, ct);
+        return NoContent();
+    }
+
+    [Authorize]
+    [HttpPost("resend-verification")]
+    public async Task<IActionResult> ResendVerification(CancellationToken ct)
+    {
+        var sub = User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+            ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (!Guid.TryParse(sub, out var userId))
+        {
+            return Unauthorized();
+        }
+
+        await auth.ResendVerificationAsync(userId, ct);
+        return NoContent();
+    }
+
+    [HttpPost("forgot-password")]
+    public async Task<IActionResult> ForgotPassword(ForgotPasswordRequest request, CancellationToken ct)
+    {
+        await auth.ForgotPasswordAsync(request.Email, ct);
+        return NoContent();
+    }
+
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword(ResetPasswordRequest request, CancellationToken ct)
+    {
+        await auth.ResetPasswordAsync(request.Token, request.NewPassword, ct);
+        return NoContent();
+    }
 }
+

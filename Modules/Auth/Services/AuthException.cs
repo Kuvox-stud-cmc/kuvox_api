@@ -13,4 +13,6 @@ public sealed class AuthException(int statusCode, string message) : Exception(me
     public static AuthException Unauthorized(string message) => new(StatusCodes.Status401Unauthorized, message);
 
     public static AuthException NotFound(string message) => new(StatusCodes.Status404NotFound, message);
+
+    public static AuthException BadRequest(string message) => new(StatusCodes.Status400BadRequest, message);
 }
