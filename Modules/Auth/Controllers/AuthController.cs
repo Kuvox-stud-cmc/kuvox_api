@@ -50,4 +50,31 @@ public sealed class AuthController(IAuthService auth) : ControllerBase
         var user = await auth.GetCurrentUserAsync(userId, ct);
         return user is null ? NotFound() : Ok(user);
     }
+
+    [HttpPost("verify-email")]
+    public async Task<ActionResult<VerifyEmailResult>> VerifyEmail(VerifyEmailRequest request, CancellationToken ct) =>
+        Ok(await auth.VerifyEmailAsync(request.Token, ct));
+
+    [HttpPost("resend-verification")]
+    public async Task<IActionResult> ResendVerification(ResendVerificationRequest request, CancellationToken ct)
+    {
+        // Anonymous: unverified users have no session. Responds neutrally (no user enumeration).
+        await auth.ResendVerificationByEmailAsync(request.Email, ct);
+        return NoContent();
+    }
+
+    [HttpPost("forgot-password")]
+    public async Task<IActionResult> ForgotPassword(ForgotPasswordRequest request, CancellationToken ct)
+    {
+        await auth.ForgotPasswordAsync(request.Email, ct);
+        return NoContent();
+    }
+
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword(ResetPasswordRequest request, CancellationToken ct)
+    {
+        await auth.ResetPasswordAsync(request.Token, request.NewPassword, ct);
+        return NoContent();
+    }
 }
+

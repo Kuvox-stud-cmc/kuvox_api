@@ -18,6 +18,7 @@ public sealed class AuthMockupController : ControllerBase
         "Sample Creator",
         "user",
         "Free",
+        EmailVerified: true,
         DateTimeOffset.UtcNow.AddDays(-7));
 
     [HttpPost("register")]

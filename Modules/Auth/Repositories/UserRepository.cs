@@ -39,6 +39,36 @@ internal sealed class UserRepository(AuthDbContext db) : IUserRepository
     public Task<RefreshToken?> GetRefreshTokenByHashAsync(string tokenHash, CancellationToken cancellationToken = default) =>
         db.RefreshTokens.FirstOrDefaultAsync(rt => rt.TokenHash == tokenHash, cancellationToken);
 
+    public async Task RevokeAllRefreshTokensAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        await db.RefreshTokens
+            .Where(rt => rt.UserId == userId && rt.RevokedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(rt => rt.RevokedAt, now), cancellationToken);
+    }
+
+    public async Task AddAuthTokenAsync(AuthToken token, CancellationToken cancellationToken = default) =>
+        await db.AuthTokens.AddAsync(token, cancellationToken);
+
+    public async Task<AuthToken?> GetActiveAuthTokenByHashAsync(
+        string tokenHash, AuthTokenPurpose purpose, CancellationToken cancellationToken = default) =>
+        await db.AuthTokens
+            .FirstOrDefaultAsync(
+                at => at.TokenHash == tokenHash
+                    && at.Purpose == purpose
+                    && at.UsedAt == null
+                    && at.ExpiresAt > DateTimeOffset.UtcNow,
+                cancellationToken);
+
+    public async Task InvalidateAuthTokensAsync(
+        Guid userId, AuthTokenPurpose purpose, CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        await db.AuthTokens
+            .Where(at => at.UserId == userId && at.Purpose == purpose && at.UsedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(at => at.UsedAt, now), cancellationToken);
+    }
+
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);
 }

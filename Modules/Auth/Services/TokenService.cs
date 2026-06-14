@@ -61,6 +61,15 @@ internal sealed class TokenService(IOptions<JwtOptions> options) : ITokenService
         return (token, HashToken(token), expiresAt);
     }
 
+    public (string Token, string TokenHash, DateTimeOffset ExpiresAt) CreateSingleUseToken(TimeSpan lifetime)
+    {
+        // URL-safe opaque token so it can ride in an email link query string unescaped.
+        var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+            .Replace('+', '-').Replace('/', '_').TrimEnd('=');
+        var expiresAt = DateTimeOffset.UtcNow.Add(lifetime);
+        return (token, HashToken(token), expiresAt);
+    }
+
     public string HashToken(string token)
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(token));

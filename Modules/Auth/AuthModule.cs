@@ -3,6 +3,8 @@ using Kuvox.Api.Modules.Auth.Contracts;
 using Kuvox.Api.Modules.Auth.Models;
 using Kuvox.Api.Modules.Auth.Repositories;
 using Kuvox.Api.Modules.Auth.Services;
+using Kuvox.Api.Modules.Shared.Infrastructure;
+using Kuvox.Api.Modules.Shared.Infrastructure.Email;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -38,6 +40,10 @@ public static class AuthModule
 
         // Public cross-module API (Rule 2).
         services.AddScoped<IAuthApi, AuthApi>();
+
+        // Email sending (SendGrid or dev log fallback) and frontend URL for email links.
+        services.AddEmailInfrastructure(configuration);
+        services.Configure<FrontendOptions>(configuration.GetSection(FrontendOptions.SectionName));
 
         // JWT options bound from the "Jwt" config section.
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));

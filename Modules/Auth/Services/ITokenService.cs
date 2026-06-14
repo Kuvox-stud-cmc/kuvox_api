@@ -17,6 +17,12 @@ internal interface ITokenService
     /// <summary>Generates a cryptographically random opaque refresh token + its SHA-256 hash.</summary>
     (string Token, string TokenHash, DateTimeOffset ExpiresAt) CreateRefreshToken();
 
+    /// <summary>
+    /// Generates a cryptographically random single-use token (email verification / password
+    /// reset) + its SHA-256 hash, expiring after <paramref name="lifetime"/>.
+    /// </summary>
+    (string Token, string TokenHash, DateTimeOffset ExpiresAt) CreateSingleUseToken(TimeSpan lifetime);
+
     /// <summary>SHA-256 hex hash of an opaque token (for refresh-token lookups).</summary>
     string HashToken(string token);
 }
