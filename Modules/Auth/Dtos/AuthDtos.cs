@@ -12,6 +12,12 @@ public sealed record AuthTokenDto(string AccessToken, string RefreshToken, DateT
 
 public sealed record VerifyEmailRequest(string Token);
 
+/// <summary>Result of consuming an email-verification token: an auto-login token pair plus
+/// whether this click is what flipped the account from unverified to verified.</summary>
+public sealed record VerifyEmailResult(AuthTokenDto Tokens, bool IsNewlyVerified);
+
+public sealed record ResendVerificationRequest(string Email);
+
 public sealed record ForgotPasswordRequest(string Email);
 
 public sealed record ResetPasswordRequest(string Token, string NewPassword);

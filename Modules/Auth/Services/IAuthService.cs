@@ -20,9 +20,11 @@ public interface IAuthService
 
     Task<UserDto?> GetCurrentUserAsync(Guid userId, CancellationToken cancellationToken = default);
 
-    Task VerifyEmailAsync(string token, CancellationToken cancellationToken = default);
+    Task<VerifyEmailResult> VerifyEmailAsync(string token, CancellationToken cancellationToken = default);
 
     Task ResendVerificationAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    Task ResendVerificationByEmailAsync(string email, CancellationToken cancellationToken = default);
 
     Task ForgotPasswordAsync(string email, CancellationToken cancellationToken = default);
 

@@ -52,25 +52,14 @@ public sealed class AuthController(IAuthService auth) : ControllerBase
     }
 
     [HttpPost("verify-email")]
-    public async Task<IActionResult> VerifyEmail(VerifyEmailRequest request, CancellationToken ct)
-    {
-        await auth.VerifyEmailAsync(request.Token, ct);
-        return NoContent();
-    }
+    public async Task<ActionResult<VerifyEmailResult>> VerifyEmail(VerifyEmailRequest request, CancellationToken ct) =>
+        Ok(await auth.VerifyEmailAsync(request.Token, ct));
 
-    [Authorize]
     [HttpPost("resend-verification")]
-    public async Task<IActionResult> ResendVerification(CancellationToken ct)
+    public async Task<IActionResult> ResendVerification(ResendVerificationRequest request, CancellationToken ct)
     {
-        var sub = User.FindFirstValue(JwtRegisteredClaimNames.Sub)
-            ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
-
-        if (!Guid.TryParse(sub, out var userId))
-        {
-            return Unauthorized();
-        }
-
-        await auth.ResendVerificationAsync(userId, ct);
+        // Anonymous: unverified users have no session. Responds neutrally (no user enumeration).
+        await auth.ResendVerificationByEmailAsync(request.Email, ct);
         return NoContent();
     }
 

@@ -81,6 +81,12 @@ internal sealed class AuthService(
             await users.SaveChangesAsync(cancellationToken);
         }
 
+        // Hard gate: unverified accounts cannot enter the app.
+        if (user.EmailVerifiedAt is null)
+        {
+            throw AuthException.Forbidden("Please verify your email before signing in.");
+        }
+
         return await IssueTokensAsync(user, cancellationToken);
     }
 
@@ -127,7 +133,7 @@ internal sealed class AuthService(
 
     // ── Email verification ──────────────────────────────────────────────────────
 
-    public async Task VerifyEmailAsync(string token, CancellationToken cancellationToken = default)
+    public async Task<VerifyEmailResult> VerifyEmailAsync(string token, CancellationToken cancellationToken = default)
     {
         var hash = tokens.HashToken(token);
         var stored = await users.GetActiveAuthTokenByHashAsync(hash, AuthTokenPurpose.EmailVerification, cancellationToken)
@@ -136,14 +142,22 @@ internal sealed class AuthService(
         var user = await users.GetByIdAsync(stored.UserId, cancellationToken)
             ?? throw AuthException.BadRequest("Invalid or expired verification token.");
 
+        // "Brand-new account" proxy: was this click what flipped us from unverified to verified?
+        var wasUnverified = user.EmailVerifiedAt is null;
+
         // Idempotent — if already verified, just consume the token.
-        if (user.EmailVerifiedAt is null)
+        if (wasUnverified)
         {
             user.EmailVerifiedAt = DateTimeOffset.UtcNow;
         }
 
         stored.UsedAt = DateTimeOffset.UtcNow;
         await users.SaveChangesAsync(cancellationToken);
+
+        // Auto-login: establish a session in the browser that opened the link.
+        var issued = await IssueTokensAsync(user, cancellationToken);
+
+        return new VerifyEmailResult(issued, wasUnverified);
     }
 
     public async Task ResendVerificationAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -159,6 +173,21 @@ internal sealed class AuthService(
 
         // Invalidate any prior verification tokens so only the newest is valid.
         await users.InvalidateAuthTokensAsync(userId, AuthTokenPurpose.EmailVerification, cancellationToken);
+
+        await SendVerificationEmailAsync(user, cancellationToken);
+    }
+
+    public async Task ResendVerificationByEmailAsync(string email, CancellationToken cancellationToken = default)
+    {
+        // Always succeed silently — no user enumeration. No-op if missing or already verified.
+        var user = await users.GetByEmailAsync(email.Trim().ToLowerInvariant(), cancellationToken);
+        if (user is null || user.EmailVerifiedAt is not null)
+        {
+            return;
+        }
+
+        // Invalidate any prior verification tokens so only the newest is valid.
+        await users.InvalidateAuthTokensAsync(user.Id, AuthTokenPurpose.EmailVerification, cancellationToken);
 
         await SendVerificationEmailAsync(user, cancellationToken);
     }
