@@ -9,6 +9,8 @@ using Kuvox.Api.Modules.Timelines;
 using Kuvox.Api.Modules.Timelines.Repositories;
 using Kuvox.Api.Modules.Media;
 using Kuvox.Api.Modules.Media.Repositories;
+using Kuvox.Api.Modules.Notifications;
+using Kuvox.Api.Modules.Notifications.Repositories;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
@@ -61,7 +63,8 @@ builder.Services
     .AddAuthModule(builder.Configuration)
     .AddProjectsModule(builder.Configuration)
     .AddMediaModule(builder.Configuration)
-    .AddTimelinesModule(builder.Configuration);
+    .AddTimelinesModule(builder.Configuration)
+    .AddNotificationsModule(builder.Configuration);
 
 // Cross-module maintenance: hourly auto-purge of >7-day-old Trash (plan §2).
 builder.Services.AddHostedService<TrashPurgeService>();
@@ -131,5 +134,6 @@ internal static class StartupExtensions
         await sp.GetRequiredService<ProjectsDbContext>().Database.MigrateAsync();
         await sp.GetRequiredService<MediaDbContext>().Database.MigrateAsync();
         await sp.GetRequiredService<TimelinesDbContext>().Database.MigrateAsync();
+        await sp.GetRequiredService<NotificationsDbContext>().Database.MigrateAsync();
     }
 }
