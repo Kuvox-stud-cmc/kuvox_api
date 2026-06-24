@@ -106,7 +106,7 @@ and environment variables. Key variables:
 | `RabbitMQ__Host`              | RabbitMQ hostname                      | `localhost`                        |
 | `Jwt__Secret`                 | JWT signing key                        | —                                  |
 | `Jwt__Issuer`                 | JWT issuer claim                       | `kuvox-api`                        |
-| `Storage__Endpoint`           | S3-compatible object storage endpoint  | `http://localhost:9000`            |
+| `Storage__Endpoint`           | S3-compatible object storage endpoint  | `http://localhost:8333`            |
 | `AiService__GrpcUrl`          | gRPC endpoint of the Python AI service | `http://localhost:50051`           |
 
 ## Docker
