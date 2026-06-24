@@ -45,7 +45,7 @@ test: ## Run the test suite (no-op until a test project exists).
 format: ## Format code with dotnet format.
 	dotnet format
 
-up: ## Start local infra (Postgres, Redis, RabbitMQ, MinIO) via docker-compose.
+up: ## Start local infra (Postgres, Redis, RabbitMQ, SeaweedFS) via docker-compose.
 	docker compose up -d
 
 down: ## Stop local infra.

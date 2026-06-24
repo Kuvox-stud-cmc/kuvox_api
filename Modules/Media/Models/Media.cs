@@ -23,7 +23,7 @@ public sealed class Media : BaseEntity
 
     public required string Filename { get; set; }
 
-    /// <summary>Object-storage key for the raw upload (S3/MinIO).</summary>
+    /// <summary>Object-storage key for the raw upload (S3/SeaweedFS).</summary>
     public required string StorageKey { get; set; }
 
     public long SizeBytes { get; set; }

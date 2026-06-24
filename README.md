@@ -27,7 +27,7 @@ between the frontend clients and the Python AI service.
 # Restore dependencies
 dotnet restore
 
-# Start local infra (Postgres, Redis, RabbitMQ, MinIO)
+# Start local infra (Postgres, Redis, RabbitMQ, SeaweedFS)
 docker compose up -d
 
 # Run the API with hot-reload
@@ -37,7 +37,7 @@ dotnet watch run
 A `Makefile` wraps the common tasks (`make help` to list them):
 
 ```bash
-make up        # start local infra (Postgres, Redis, RabbitMQ, MinIO)
+make up        # start local infra (Postgres, Redis, RabbitMQ, SeaweedFS)
 make watch     # run the API with hot-reload
 make build     # Release build
 make test      # run tests (no-op until a test project exists)
@@ -52,7 +52,7 @@ The API will be available at `https://localhost:5001` (or `http://localhost:5000
 > The OpenAPI/Scalar endpoints are mapped only when `ASPNETCORE_ENVIRONMENT=Development`.
 
 > **Local infra note:** the `ai-service` repo ships its own compose that also publishes
-> Redis, RabbitMQ and MinIO on the same ports. Don't run both repos' infra at once —
+> Redis, RabbitMQ and SeaweedFS on the same ports. Don't run both repos' infra at once —
 > bring up only one set, or stop the other before an end-to-end run.
 
 ## Modules
