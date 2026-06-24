@@ -29,7 +29,7 @@ public sealed class Media : BaseEntity
     public long SizeBytes { get; set; }
 
     /// <summary>Ingestion status mirror: uploaded | processing | ready | failed.</summary>
-    public string Status { get; set; } = "uploaded";
+    public required MediaStatus Status { get; set; }
 
     /// <summary>Video/audio only.</summary>
     public double? DurationSeconds { get; set; }

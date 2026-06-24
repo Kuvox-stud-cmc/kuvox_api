@@ -18,5 +18,5 @@ public sealed class MediaUser : JunctionBaseEntity
 
     public Guid? AlbumId { get; set; }
 
-    public required MediaRole Role { get; set; }
+    public required Permission Role { get; set; }
 }
