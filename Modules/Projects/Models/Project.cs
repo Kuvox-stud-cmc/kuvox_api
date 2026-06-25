@@ -21,6 +21,9 @@ public sealed class Project : BaseEntity
 
     public string? Description { get; set; }
 
+    /// <summary>Duration in seconds for video editing projects; null for image projects.</summary>
+    public double? DurationSeconds { get; set; } 
+
     public string Status { get; set; } = "draft";
 
     /// <summary>Soft-delete timestamp; non-null means the project is in Trash.</summary>

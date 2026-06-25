@@ -10,4 +10,5 @@ public sealed record MediaSummary(
     MediaKind Kind,
     Guid? ProjectId,
     string Filename,
-    string Status);
+    string Status
+);

@@ -9,5 +9,7 @@ public sealed class AlbumUser : JunctionBaseEntity
 
   public required Guid UserId { get; set; }
 
-  public required Permission Role { get; set; } = Permission.Owner;
+  public required Permission Role { get; set; }
+
+  public required bool IsFavorite { get; set; } = false;
 }

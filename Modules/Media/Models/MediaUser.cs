@@ -8,7 +8,7 @@ namespace Kuvox.Api.Modules.Media.Models;
 /// Owner access stays denormalized on <see cref="Media.OwnerId"/>; this table is the
 /// "shared with me" set (Rule 1 — references users by id only, no cross-schema FK).
 /// </summary>
-public sealed class MediaUser : JunctionBaseEntity
+public abstract class MediaUser : JunctionBaseEntity
 {
     public required Guid MediaId { get; set; }
 

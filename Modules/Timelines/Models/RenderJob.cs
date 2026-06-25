@@ -1,4 +1,5 @@
 using Kuvox.Api.Modules.Shared.Models;
+using Kuvox.Api.Modules.Timelines.Enums;
 
 namespace Kuvox.Api.Modules.Timelines.Models;
 
@@ -13,7 +14,7 @@ public sealed class RenderJob : BaseEntity
     public Guid? RevisionId { get; set; }
 
     /// <summary>queued | rendering | completed | failed.</summary>
-    public string Status { get; set; } = "queued";
+    public RenderStatus Status { get; set; } = RenderStatus.Queued;
 
     /// <summary>Object-storage key of the rendered output once completed.</summary>
     public string? OutputStorageKey { get; set; }

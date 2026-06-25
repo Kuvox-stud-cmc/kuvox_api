@@ -15,4 +15,8 @@ public sealed class ProjectUser : JunctionBaseEntity
     public required Guid UserId { get; set; }
 
     public required ProjectRole Role { get; set; }
+
+    public required bool IsStarred { get; set; } = false;
+
+    public required bool IsTemplate { get; set; } = false;
 }
