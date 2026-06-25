@@ -1,5 +1,6 @@
 using Kuvox.Api.Modules.Media.Enums;
 using Kuvox.Api.Modules.Shared.Models;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Kuvox.Api.Modules.Media.Models;
 
@@ -11,6 +12,9 @@ namespace Kuvox.Api.Modules.Media.Models;
 /// </summary>
 public abstract class Media : BaseEntity
 {
+    [NotMapped]
+    public abstract MediaKind Kind { get; }
+
     /// <summary>Owning workspace id (user or studio); see <see cref="OwnerKind"/>.</summary>
     public required Guid OwnerId { get; set; }
 

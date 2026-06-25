@@ -16,7 +16,7 @@ internal interface IMediaRepository
         OwnerKind ownerKind, Guid ownerId, int page, int pageSize, CancellationToken cancellationToken = default);
 
     /// <summary>Live media shared with a user via <c>media_users</c> (excludes ones they own), paged.</summary>
-    Task<(IReadOnlyList<(Models.Media Media, MediaRole Role)> Items, int Total)> ListSharedWithUserAsync(
+    Task<(IReadOnlyList<(Models.Media Media, Permission Role)> Items, int Total)> ListSharedWithUserAsync(
         Guid userId, int page, int pageSize, CancellationToken cancellationToken = default);
 
     /// <summary>Trashed (soft-deleted) media owned by a workspace, newest-deleted first, paged.</summary>

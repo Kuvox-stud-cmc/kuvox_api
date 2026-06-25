@@ -7,6 +7,9 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
 {
     public const string Schema = "media";
 
+    public DbSet<Models.Media> Media => Set<Models.Media>();
+    public DbSet<Models.MediaUser> MediaUsers => Set<Models.MediaUser>();
+
     public DbSet<Models.Video> Videos => Set<Models.Video>();
     public DbSet<Models.Audio> Audios => Set<Models.Audio>();
     public DbSet<Models.Photo> Photos => Set<Models.Photo>();
@@ -21,10 +24,12 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
     {
         modelBuilder.HasDefaultSchema(Schema);
 
+        modelBuilder.Entity<Models.Media>().UseTpcMappingStrategy().HasKey(m => m.Id);
+        modelBuilder.Entity<Models.MediaUser>().UseTpcMappingStrategy().HasKey(mu => new { mu.MediaId, mu.UserId });
+
         modelBuilder.Entity<Models.Video>(entity =>
         {
             entity.ToTable("videos");
-            entity.HasKey(m => m.Id);
             entity.Property(m => m.OwnerKind).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(m => m.Filename).HasMaxLength(512).IsRequired();
             entity.Property(m => m.StorageKey).HasMaxLength(1024).IsRequired();
@@ -47,7 +52,6 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
         modelBuilder.Entity<Models.Audio>(entity =>
         {
             entity.ToTable("audios");
-            entity.HasKey(a => a.Id);
             entity.Property(a => a.OwnerKind).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(a => a.Filename).HasMaxLength(512).IsRequired();
             entity.Property(a => a.StorageKey).HasMaxLength(1024).IsRequired();
@@ -66,7 +70,6 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
         modelBuilder.Entity<Models.Photo>(entity =>
         {
             entity.ToTable("photos");
-            entity.HasKey(p => p.Id);
             entity.Property(p => p.OwnerKind).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(p => p.Filename).HasMaxLength(512).IsRequired();
             entity.Property(p => p.StorageKey).HasMaxLength(1024).IsRequired();
@@ -85,7 +88,6 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
         modelBuilder.Entity<Models.VideoUser>(entity =>
         {
             entity.ToTable("video_users");
-            entity.HasKey(mu => new { mu.MediaId, mu.UserId });
             entity.Property(mu => mu.Role).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(mu => mu.IsFavorite).HasDefaultValue(false).IsRequired();
             entity.Property(mu => mu.AlbumId).HasConversion<string>().HasMaxLength(32).IsRequired();
@@ -100,7 +102,6 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
         modelBuilder.Entity<Models.AudioUser>(entity =>
         {
             entity.ToTable("audio_users");
-            entity.HasKey(mu => new { mu.MediaId, mu.UserId });
             entity.Property(mu => mu.Role).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(mu => mu.IsFavorite).HasDefaultValue(false).IsRequired();
             entity.Property(mu => mu.AlbumId).HasConversion<string>().HasMaxLength(32).IsRequired();
@@ -115,7 +116,6 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
         modelBuilder.Entity<Models.PhotoUser>(entity =>
         {
             entity.ToTable("photo_users");
-            entity.HasKey(mu => new { mu.MediaId, mu.UserId });
             entity.Property(mu => mu.Role).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(mu => mu.IsFavorite).HasDefaultValue(false).IsRequired();
             entity.Property(mu => mu.AlbumId).HasConversion<string>().HasMaxLength(32).IsRequired();

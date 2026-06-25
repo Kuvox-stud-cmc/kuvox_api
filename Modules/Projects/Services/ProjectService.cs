@@ -116,7 +116,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
         if (existing is null)
         {
             await projects.AddProjectUserAsync(
-                new ProjectUser { ProjectId = project.Id, UserId = invitee.Id, Role = request.Role },
+                new ProjectUser { ProjectId = project.Id, UserId = invitee.Id, Role = request.Role, IsStarred = false, IsTemplate = false },
                 cancellationToken);
         }
         else

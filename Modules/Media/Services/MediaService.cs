@@ -65,15 +65,46 @@ internal sealed class MediaService(IMediaRepository media, IAuthApi auth, IMedia
             throw DomainException.BadRequest("Unknown owner.");
         }
 
-        var item = new Models.Media
+        Models.Media item = request.Kind switch
         {
-            OwnerId = scope.OwnerId,
-            OwnerKind = OwnerKindOf(scope),
-            Kind = request.Kind,
-            ProjectId = request.ProjectId,
-            Filename = request.Filename.Trim(),
-            StorageKey = request.StorageKey.Trim(),
-            SizeBytes = request.SizeBytes,
+            MediaKind.Video => new Models.Video
+            {
+                DurationSeconds = 0,
+                Width = 0,
+                Height = 0,
+                FrameRate = 0,
+                OwnerId = scope.OwnerId,
+                OwnerKind = OwnerKindOf(scope),
+                ProjectId = request.ProjectId,
+                Filename = request.Filename.Trim(),
+                StorageKey = request.StorageKey.Trim(),
+                SizeBytes = request.SizeBytes,
+                Status = MediaStatus.Uploaded
+            },
+            MediaKind.Audio => new Models.Audio
+            {
+                DurationSeconds = 0,
+                OwnerId = scope.OwnerId,
+                OwnerKind = OwnerKindOf(scope),
+                ProjectId = request.ProjectId,
+                Filename = request.Filename.Trim(),
+                StorageKey = request.StorageKey.Trim(),
+                SizeBytes = request.SizeBytes,
+                Status = MediaStatus.Uploaded
+            },
+            MediaKind.Image => new Models.Photo
+            {
+                Width = 0,
+                Height = 0,
+                OwnerId = scope.OwnerId,
+                OwnerKind = OwnerKindOf(scope),
+                ProjectId = request.ProjectId,
+                Filename = request.Filename.Trim(),
+                StorageKey = request.StorageKey.Trim(),
+                SizeBytes = request.SizeBytes,
+                Status = MediaStatus.Uploaded
+            },
+            _ => throw DomainException.BadRequest("Unknown media kind.")
         };
 
         await media.AddAsync(item, cancellationToken);
@@ -100,9 +131,14 @@ internal sealed class MediaService(IMediaRepository media, IAuthApi auth, IMedia
         var existing = await media.GetMediaUserAsync(item.Id, invitee.Id, cancellationToken);
         if (existing is null)
         {
-            await media.AddMediaUserAsync(
-                new MediaUser { MediaId = item.Id, UserId = invitee.Id, Role = request.Role },
-                cancellationToken);
+            MediaUser newUser = item switch
+            {
+                Models.Video => new VideoUser { MediaId = item.Id, UserId = invitee.Id, Role = request.Role, AlbumId = Guid.Empty, IsFavorite = false },
+                Models.Audio => new AudioUser { MediaId = item.Id, UserId = invitee.Id, Role = request.Role, AlbumId = Guid.Empty, IsFavorite = false },
+                Models.Photo => new PhotoUser { MediaId = item.Id, UserId = invitee.Id, Role = request.Role, AlbumId = Guid.Empty, IsFavorite = false },
+                _ => throw new NotSupportedException()
+            };
+            await media.AddMediaUserAsync(newUser, cancellationToken);
         }
         else
         {
@@ -195,9 +231,15 @@ internal sealed class MediaService(IMediaRepository media, IAuthApi auth, IMedia
     private static (int Page, int PageSize) Normalize(int page, int pageSize) =>
         (Math.Max(1, page), Math.Clamp(pageSize, 1, 100));
 
-    private static MediaDto ToDto(Models.Media m) =>
-        new(m.Id, m.OwnerId, m.OwnerKind, m.Kind, m.ProjectId, m.Filename, m.StorageKey, m.SizeBytes,
-            m.Status, m.DurationSeconds, m.Width, m.Height, m.Codec, m.CreatedAt);
+    private static MediaDto ToDto(Models.Media m)
+    {
+        double? duration = m switch { Video v => v.DurationSeconds, Audio a => a.DurationSeconds, _ => null };
+        int? width = m switch { Video v => v.Width, Photo p => p.Width, _ => null };
+        int? height = m switch { Video v => v.Height, Photo p => p.Height, _ => null };
+        
+        return new(m.Id, m.OwnerId, m.OwnerKind, m.Kind, m.ProjectId, m.Filename, m.StorageKey, m.SizeBytes,
+            m.Status.ToString(), duration, width, height, m.Codec, m.CreatedAt);
+    }
 
     private static MediaTrashItemDto ToTrashDto(Models.Media m)
     {

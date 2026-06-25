@@ -31,7 +31,7 @@ internal sealed class MediaRepository(MediaDbContext db) : IMediaRepository
         return (items, total);
     }
 
-    public async Task<(IReadOnlyList<(Models.Media Media, MediaRole Role)> Items, int Total)> ListSharedWithUserAsync(
+    public async Task<(IReadOnlyList<(Models.Media Media, Permission Role)> Items, int Total)> ListSharedWithUserAsync(
         Guid userId, int page, int pageSize, CancellationToken cancellationToken = default)
     {
         var query =

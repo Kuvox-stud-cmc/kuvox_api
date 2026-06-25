@@ -30,7 +30,7 @@ public sealed record RegisterMediaRequest(
     long SizeBytes);
 
 /// <summary>Grants another user (looked up by email) access to a media item.</summary>
-public sealed record ShareMediaRequest(string Email, MediaRole Role);
+public sealed record ShareMediaRequest(string Email, Permission Role);
 
 /// <summary>A trashed media item plus how long until auto-purge removes it (7-day window).</summary>
 public sealed record MediaTrashItemDto(
