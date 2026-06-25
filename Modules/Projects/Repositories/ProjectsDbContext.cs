@@ -27,7 +27,7 @@ public sealed class ProjectsDbContext(DbContextOptions<ProjectsDbContext> option
             entity.Property(p => p.Kind).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(p => p.Name).HasMaxLength(200).IsRequired();
             entity.Property(p => p.Description).HasMaxLength(2000);
-            entity.Property(p => p.Status).HasConversion<ProjectStatus>().HasMaxLength(32).IsRequired();
+            entity.Property(p => p.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             // OwnerId references auth.users/auth.studios by id only — no cross-schema FK (Rule 1/3).
             entity.HasIndex(p => p.OwnerId);
             entity.HasIndex(p => new { p.OwnerKind, p.OwnerId });
