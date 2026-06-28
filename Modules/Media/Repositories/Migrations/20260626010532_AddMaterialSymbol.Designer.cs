@@ -3,6 +3,7 @@ using System;
 using Kuvox.Api.Modules.Media.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Kuvox.Api.Modules.Media.Repositories.Migrations
 {
     [DbContext(typeof(MediaDbContext))]
-    partial class MediaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260626010532_AddMaterialSymbol")]
+    partial class AddMaterialSymbol
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -37,9 +40,6 @@ namespace Kuvox.Api.Modules.Media.Repositories.Migrations
                         .HasMaxLength(1024)
                         .HasColumnType("character varying(1024)");
 
-                    b.Property<bool>("IsDeleteAble")
-                        .HasColumnType("boolean");
-
                     b.Property<string>("Kind")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -61,27 +61,6 @@ namespace Kuvox.Api.Modules.Media.Repositories.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("albums", "media");
-                });
-
-            modelBuilder.Entity("Kuvox.Api.Modules.Media.Models.AlbumMedia", b =>
-                {
-                    b.Property<Guid>("AlbumId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("MediaId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("AlbumId", "MediaId");
-
-                    b.ToTable((string)null);
-
-                    b.UseTpcMappingStrategy();
                 });
 
             modelBuilder.Entity("Kuvox.Api.Modules.Media.Models.AlbumUser", b =>
@@ -191,6 +170,11 @@ namespace Kuvox.Api.Modules.Media.Repositories.Migrations
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("AlbumId")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -212,33 +196,6 @@ namespace Kuvox.Api.Modules.Media.Repositories.Migrations
                     b.ToTable((string)null);
 
                     b.UseTpcMappingStrategy();
-                });
-
-            modelBuilder.Entity("Kuvox.Api.Modules.Media.Models.AlbumAudio", b =>
-                {
-                    b.HasBaseType("Kuvox.Api.Modules.Media.Models.AlbumMedia");
-
-                    b.HasIndex("MediaId");
-
-                    b.ToTable("album_audios", "media");
-                });
-
-            modelBuilder.Entity("Kuvox.Api.Modules.Media.Models.AlbumPhoto", b =>
-                {
-                    b.HasBaseType("Kuvox.Api.Modules.Media.Models.AlbumMedia");
-
-                    b.HasIndex("MediaId");
-
-                    b.ToTable("album_photos", "media");
-                });
-
-            modelBuilder.Entity("Kuvox.Api.Modules.Media.Models.AlbumVideo", b =>
-                {
-                    b.HasBaseType("Kuvox.Api.Modules.Media.Models.AlbumMedia");
-
-                    b.HasIndex("MediaId");
-
-                    b.ToTable("album_videos", "media");
                 });
 
             modelBuilder.Entity("Kuvox.Api.Modules.Media.Models.Audio", b =>
@@ -336,51 +293,6 @@ namespace Kuvox.Api.Modules.Media.Repositories.Migrations
                     b.HasOne("Kuvox.Api.Modules.Media.Models.Album", null)
                         .WithMany()
                         .HasForeignKey("AlbumId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Kuvox.Api.Modules.Media.Models.AlbumAudio", b =>
-                {
-                    b.HasOne("Kuvox.Api.Modules.Media.Models.Album", null)
-                        .WithMany()
-                        .HasForeignKey("AlbumId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Kuvox.Api.Modules.Media.Models.Audio", null)
-                        .WithMany()
-                        .HasForeignKey("MediaId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Kuvox.Api.Modules.Media.Models.AlbumPhoto", b =>
-                {
-                    b.HasOne("Kuvox.Api.Modules.Media.Models.Album", null)
-                        .WithMany()
-                        .HasForeignKey("AlbumId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Kuvox.Api.Modules.Media.Models.Photo", null)
-                        .WithMany()
-                        .HasForeignKey("MediaId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Kuvox.Api.Modules.Media.Models.AlbumVideo", b =>
-                {
-                    b.HasOne("Kuvox.Api.Modules.Media.Models.Album", null)
-                        .WithMany()
-                        .HasForeignKey("AlbumId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Kuvox.Api.Modules.Media.Models.Video", null)
-                        .WithMany()
-                        .HasForeignKey("MediaId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

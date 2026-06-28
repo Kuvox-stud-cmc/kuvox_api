@@ -67,7 +67,7 @@ internal sealed class MediaService(IMediaRepository media, IAuthApi auth, IMedia
 
         Models.Media item = request.Kind switch
         {
-            MediaKind.Video => new Models.Video
+            MediaKind.Video => new Video
             {
                 DurationSeconds = 0,
                 Width = 0,
@@ -81,7 +81,7 @@ internal sealed class MediaService(IMediaRepository media, IAuthApi auth, IMedia
                 SizeBytes = request.SizeBytes,
                 Status = MediaStatus.Uploaded
             },
-            MediaKind.Audio => new Models.Audio
+            MediaKind.Audio => new Audio
             {
                 DurationSeconds = 0,
                 OwnerId = scope.OwnerId,
@@ -92,7 +92,7 @@ internal sealed class MediaService(IMediaRepository media, IAuthApi auth, IMedia
                 SizeBytes = request.SizeBytes,
                 Status = MediaStatus.Uploaded
             },
-            MediaKind.Image => new Models.Photo
+            MediaKind.Image => new Photo
             {
                 Width = 0,
                 Height = 0,
@@ -133,9 +133,9 @@ internal sealed class MediaService(IMediaRepository media, IAuthApi auth, IMedia
         {
             MediaUser newUser = item switch
             {
-                Models.Video => new VideoUser { MediaId = item.Id, UserId = invitee.Id, Role = request.Role, AlbumId = Guid.Empty, IsFavorite = false },
-                Models.Audio => new AudioUser { MediaId = item.Id, UserId = invitee.Id, Role = request.Role, AlbumId = Guid.Empty, IsFavorite = false },
-                Models.Photo => new PhotoUser { MediaId = item.Id, UserId = invitee.Id, Role = request.Role, AlbumId = Guid.Empty, IsFavorite = false },
+                Video => new VideoUser { MediaId = item.Id, UserId = invitee.Id, Role = request.Role, IsFavorite = false },
+                Audio => new AudioUser { MediaId = item.Id, UserId = invitee.Id, Role = request.Role, IsFavorite = false },
+                Photo => new PhotoUser { MediaId = item.Id, UserId = invitee.Id, Role = request.Role, IsFavorite = false },
                 _ => throw new NotSupportedException()
             };
             await media.AddMediaUserAsync(newUser, cancellationToken);
@@ -231,14 +231,15 @@ internal sealed class MediaService(IMediaRepository media, IAuthApi auth, IMedia
     private static (int Page, int PageSize) Normalize(int page, int pageSize) =>
         (Math.Max(1, page), Math.Clamp(pageSize, 1, 100));
 
-    private static MediaDto ToDto(Models.Media m)
+    internal static MediaDto ToDto(Models.Media m)
     {
         double? duration = m switch { Video v => v.DurationSeconds, Audio a => a.DurationSeconds, _ => null };
         int? width = m switch { Video v => v.Width, Photo p => p.Width, _ => null };
         int? height = m switch { Video v => v.Height, Photo p => p.Height, _ => null };
+        double? frameRate = m switch { Video v => v.FrameRate, _ => null };
         
         return new(m.Id, m.OwnerId, m.OwnerKind, m.Kind, m.ProjectId, m.Filename, m.StorageKey, m.SizeBytes,
-            m.Status.ToString(), duration, width, height, m.Codec, m.CreatedAt);
+            m.Status.ToString(), duration, width, height, m.Codec, frameRate, m.CreatedAt);
     }
 
     private static MediaTrashItemDto ToTrashDto(Models.Media m)

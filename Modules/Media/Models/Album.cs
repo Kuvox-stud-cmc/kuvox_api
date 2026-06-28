@@ -10,4 +10,8 @@ public sealed class Album : BaseEntity
   public required string Description { get; set; }
 
   public required AlbumKind Kind { get; set; }
+
+  public required string MaterialSymbol { get; set; } = "folder";
+
+  public required bool IsDeleteAble { get; set; } = true;
 }

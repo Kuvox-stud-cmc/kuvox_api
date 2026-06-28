@@ -1,6 +1,8 @@
+using Kuvox.Api.Modules.Auth.Contracts;
 using Kuvox.Api.Modules.Auth.Enums;
 using Kuvox.Api.Modules.Auth.Models;
 using Kuvox.Api.Modules.Auth.Repositories;
+using MediatR;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -59,9 +61,11 @@ public static class AuthDevSeeder
         var sp = scope.ServiceProvider;
         var db = sp.GetRequiredService<AuthDbContext>();
         var hasher = sp.GetRequiredService<IPasswordHasher<User>>();
+        var publisher = sp.GetRequiredService<IPublisher>();
 
         // 1. Users — create any that are missing.
         var usersByEmail = new Dictionary<string, User>(StringComparer.Ordinal);
+        var newUsers = new List<User>();
         foreach (var seed in seedUsers)
         {
             var existing = await db.Users.FirstOrDefaultAsync(u => u.Email == seed.Email);
@@ -82,9 +86,15 @@ public static class AuthDevSeeder
             user.PasswordHash = hasher.HashPassword(user, password);
             db.Users.Add(user);
             usersByEmail[seed.Email] = user;
+            newUsers.Add(user);
             app.Logger.LogInformation("Dev seed: created pre-verified user {Email}.", seed.Email);
         }
         await db.SaveChangesAsync();
+
+        foreach (var user in newUsers)
+        {
+            await publisher.Publish(new UserRegisteredEvent(user.Id, user.Email));
+        }
 
         // 2. Studio — create the sample team if it's missing.
         var studio = await db.Studios.FirstOrDefaultAsync(s => s.Name == StudioName);

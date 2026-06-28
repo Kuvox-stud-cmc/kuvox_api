@@ -16,7 +16,9 @@ public sealed record MediaDto(
     int? Width,
     int? Height,
     string? Codec,
-    DateTimeOffset CreatedAt);
+    double? FrameRate,
+    DateTimeOffset CreatedAt
+);
 
 /// <summary>
 /// Registers an uploaded object as a media item pending ingestion. Owner (workspace + user) is

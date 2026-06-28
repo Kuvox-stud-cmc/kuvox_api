@@ -214,7 +214,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
         (Math.Max(1, page), Math.Clamp(pageSize, 1, 100));
 
     private static ProjectDto ToDto(Project p) =>
-        new(p.Id, p.OwnerId, p.OwnerKind, p.Kind, p.Name, p.Description, p.Status, p.CreatedAt, p.UpdatedAt);
+        new(p.Id, p.OwnerId, p.OwnerKind, p.Kind, p.Name, p.Description, p.DurationSeconds, p.Status, p.CreatedAt, p.UpdatedAt);
 
     private static ProjectTrashItemDto ToTrashDto(Project p)
     {

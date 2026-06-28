@@ -15,7 +15,9 @@ public static class MediaModule
                 npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", MediaDbContext.Schema)));
 
         services.AddScoped<IMediaRepository, MediaRepository>();
+        services.AddScoped<IAlbumRepository, AlbumRepository>();
         services.AddScoped<IMediaService, MediaService>();
+        services.AddScoped<IAlbumService, AlbumService>();
         services.AddScoped<IMediaApi, MediaApi>();
 
         // INotificationHandler<ProjectDeletedEvent> is discovered by the MediatR assembly scan.

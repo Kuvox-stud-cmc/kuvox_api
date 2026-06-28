@@ -9,6 +9,7 @@ public sealed record ProjectDto(
     ProjectKind Kind,
     string Name,
     string? Description,
+    double? DurationSeconds,
     string Status,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);

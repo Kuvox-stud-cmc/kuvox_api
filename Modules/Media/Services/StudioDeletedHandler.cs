@@ -2,8 +2,6 @@ using Kuvox.Api.Modules.Auth.Contracts;
 using Kuvox.Api.Modules.Media.Enums;
 using Kuvox.Api.Modules.Media.Repositories;
 using MediatR;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace Kuvox.Api.Modules.Media.Services;
 

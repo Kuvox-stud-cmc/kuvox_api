@@ -20,12 +20,18 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
     public DbSet<Models.Album> Albums => Set<Models.Album>();
     public DbSet<Models.AlbumUser> AlbumUsers => Set<Models.AlbumUser>();
 
+    public DbSet<Models.AlbumMedia> AlbumMedia => Set<Models.AlbumMedia>();
+    public DbSet<Models.AlbumPhoto> AlbumPhotos => Set<Models.AlbumPhoto>();
+    public DbSet<Models.AlbumAudio> AlbumAudios => Set<Models.AlbumAudio>();
+    public DbSet<Models.AlbumVideo> AlbumVideos => Set<Models.AlbumVideo>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema(Schema);
 
         modelBuilder.Entity<Models.Media>().UseTpcMappingStrategy().HasKey(m => m.Id);
         modelBuilder.Entity<Models.MediaUser>().UseTpcMappingStrategy().HasKey(mu => new { mu.MediaId, mu.UserId });
+        modelBuilder.Entity<Models.AlbumMedia>().UseTpcMappingStrategy().HasKey(am => new { am.AlbumId, am.MediaId });
 
         modelBuilder.Entity<Models.Video>(entity =>
         {
@@ -38,8 +44,7 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
             entity.Property(m => m.ErrorMessage).HasMaxLength(1024);
             entity.Property(m => m.ArchiveStorageKey).HasMaxLength(1024);
             entity.Property(m => m.ArchiveReason).HasMaxLength(1024);
-            entity.Property(m => m.DurationSeconds).HasPrecision(18, 6);
-            entity.Property(m => m.DurationSeconds).IsRequired();
+            entity.Property(m => m.DurationSeconds).HasPrecision(18, 6).IsRequired();
             entity.Property(m => m.Width).IsRequired();
             entity.Property(m => m.Height).IsRequired();
             entity.Property(m => m.FrameRate).HasPrecision(18, 6).IsRequired();
@@ -90,7 +95,6 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
             entity.ToTable("video_users");
             entity.Property(mu => mu.Role).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(mu => mu.IsFavorite).HasDefaultValue(false).IsRequired();
-            entity.Property(mu => mu.AlbumId).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.HasIndex(mu => mu.UserId);
 
             entity.HasOne<Models.Video>()
@@ -104,7 +108,6 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
             entity.ToTable("audio_users");
             entity.Property(mu => mu.Role).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(mu => mu.IsFavorite).HasDefaultValue(false).IsRequired();
-            entity.Property(mu => mu.AlbumId).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.HasIndex(mu => mu.UserId);
 
             entity.HasOne<Models.Audio>()
@@ -118,7 +121,6 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
             entity.ToTable("photo_users");
             entity.Property(mu => mu.Role).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(mu => mu.IsFavorite).HasDefaultValue(false).IsRequired();
-            entity.Property(mu => mu.AlbumId).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.HasIndex(mu => mu.UserId);
 
             entity.HasOne<Models.Photo>()
@@ -134,6 +136,8 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
             entity.Property(a => a.Name).HasMaxLength(256).IsRequired();
             entity.Property(a => a.Description).HasMaxLength(1024).IsRequired();
             entity.Property(a => a.Kind).HasConversion<string>().HasMaxLength(32).IsRequired();
+            entity.Property(a => a.MaterialSymbol).HasMaxLength(64).IsRequired();
+            entity.Property(a => a.IsDeleteAble).IsRequired();
         });
 
         modelBuilder.Entity<Models.AlbumUser>(entity =>
@@ -146,6 +150,51 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
             entity.HasOne<Models.Album>()
                 .WithMany()
                 .HasForeignKey(au => au.AlbumId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Models.AlbumAudio>(entity =>
+        {
+            entity.ToTable("album_audios");
+
+            entity.HasOne<Models.Album>()
+                .WithMany()
+                .HasForeignKey(am => am.AlbumId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne<Models.Audio>()
+                .WithMany()
+                .HasForeignKey(am => am.MediaId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Models.AlbumVideo>(entity =>
+        {
+            entity.ToTable("album_videos");
+
+            entity.HasOne<Models.Album>()
+                .WithMany()
+                .HasForeignKey(am => am.AlbumId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne<Models.Video>()
+                .WithMany()
+                .HasForeignKey(am => am.MediaId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<Models.AlbumPhoto>(entity =>
+        {
+            entity.ToTable("album_photos");
+
+            entity.HasOne<Models.Album>()
+                .WithMany()
+                .HasForeignKey(am => am.AlbumId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne<Models.Photo>()
+                .WithMany()
+                .HasForeignKey(am => am.MediaId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

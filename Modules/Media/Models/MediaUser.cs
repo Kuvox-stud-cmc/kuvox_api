@@ -16,7 +16,5 @@ public abstract class MediaUser : JunctionBaseEntity
 
     public required bool IsFavorite { get; set; } = false;
 
-    public Guid? AlbumId { get; set; }
-
     public required Permission Role { get; set; }
 }
