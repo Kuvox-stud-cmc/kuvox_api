@@ -14,6 +14,6 @@ internal sealed class MediaApi(IMediaRepository media) : IMediaApi
         var item = await media.GetByIdAsync(mediaId, cancellationToken);
         return item is null
             ? null
-            : new MediaSummary(item.Id, item.OwnerId, item.OwnerKind, item.Kind, item.ProjectId, item.Filename, item.Status);
+            : new MediaSummary(item.Id, item.OwnerId, item.OwnerKind, item.Kind, item.ProjectId, item.Filename, item.Status.ToString());
     }
 }

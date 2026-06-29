@@ -1,5 +1,6 @@
 using Kuvox.Api.Modules.Media.Enums;
 using Kuvox.Api.Modules.Shared.Models;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Kuvox.Api.Modules.Media.Models;
 
@@ -9,38 +10,44 @@ namespace Kuvox.Api.Modules.Media.Models;
 /// reference other modules by id only (no cross-schema FK). Soft-deleted via
 /// <see cref="DeletedAt"/> into Trash.
 /// </summary>
-public sealed class Media : BaseEntity
+public abstract class Media : BaseEntity
 {
+    [NotMapped]
+    public abstract MediaKind Kind { get; }
+
     /// <summary>Owning workspace id (user or studio); see <see cref="OwnerKind"/>.</summary>
     public required Guid OwnerId { get; set; }
 
     public required OwnerKind OwnerKind { get; set; }
 
-    public required MediaKind Kind { get; set; }
 
     /// <summary>Optional link to a project that uses this media (references Projects by id only).</summary>
     public Guid? ProjectId { get; set; }
 
     public required string Filename { get; set; }
 
-    /// <summary>Object-storage key for the raw upload (S3/MinIO).</summary>
+    /// <summary>Object-storage key for the raw upload (S3/SeaweedFS).</summary>
     public required string StorageKey { get; set; }
 
     public long SizeBytes { get; set; }
 
     /// <summary>Ingestion status mirror: uploaded | processing | ready | failed.</summary>
-    public string Status { get; set; } = "uploaded";
+    public required MediaStatus Status { get; set; }
 
-    /// <summary>Video/audio only.</summary>
-    public double? DurationSeconds { get; set; }
-
-    /// <summary>Video/image only.</summary>
-    public int? Width { get; set; }
-
-    public int? Height { get; set; }
+    /// <summary>
+    /// Error message from the uploaded and ingestion pipeline, if any. Null if <see cref="Status"/> is not "failed".
+    /// </summary>
+    public string? ErrorMessage { get; set; }
 
     public string? Codec { get; set; }
 
     /// <summary>Soft-delete timestamp; non-null means the item is in Trash.</summary>
     public DateTimeOffset? DeletedAt { get; set; }
+
+    /// <summary>Archive timestamp, storage key, and reason</summary>
+    public DateTimeOffset? ArchivedAt { get; set; }
+
+    public string? ArchiveStorageKey { get; set; }
+
+    public string? ArchiveReason { get; set; }
 }

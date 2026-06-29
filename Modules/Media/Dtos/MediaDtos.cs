@@ -16,7 +16,9 @@ public sealed record MediaDto(
     int? Width,
     int? Height,
     string? Codec,
-    DateTimeOffset CreatedAt);
+    double? FrameRate,
+    DateTimeOffset CreatedAt
+);
 
 /// <summary>
 /// Registers an uploaded object as a media item pending ingestion. Owner (workspace + user) is
@@ -30,7 +32,7 @@ public sealed record RegisterMediaRequest(
     long SizeBytes);
 
 /// <summary>Grants another user (looked up by email) access to a media item.</summary>
-public sealed record ShareMediaRequest(string Email, MediaRole Role);
+public sealed record ShareMediaRequest(string Email, Permission Role);
 
 /// <summary>A trashed media item plus how long until auto-purge removes it (7-day window).</summary>
 public sealed record MediaTrashItemDto(

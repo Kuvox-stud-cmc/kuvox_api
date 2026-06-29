@@ -1,4 +1,5 @@
 using Kuvox.Api.Modules.Shared.Models;
+using Kuvox.Api.Modules.Timelines.Enums;
 
 namespace Kuvox.Api.Modules.Timelines.Models;
 
@@ -14,6 +15,5 @@ public sealed class CommandHistory : BaseEntity
 
     public required string CommandText { get; set; }
 
-    /// <summary>Classified intent label, e.g. "concrete" | "abstract" | "unknown".</summary>
-    public string? Intent { get; set; }
+    public Intent? Intent { get; set; }
 }

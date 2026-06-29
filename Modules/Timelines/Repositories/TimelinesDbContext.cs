@@ -40,7 +40,7 @@ public sealed class TimelinesDbContext(DbContextOptions<TimelinesDbContext> opti
         {
             entity.ToTable("render_jobs");
             entity.HasKey(j => j.Id);
-            entity.Property(j => j.Status).HasMaxLength(32).IsRequired();
+            entity.Property(j => j.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(j => j.OutputStorageKey).HasMaxLength(1024);
             entity.HasIndex(j => j.TimelineId);
         });
