@@ -18,6 +18,10 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
 
     public DbSet<UserStudio> UserStudios => Set<UserStudio>();
 
+    public DbSet<StudioInvitation> StudioInvitations => Set<StudioInvitation>();
+
+    public DbSet<AuditLogEntry> AuditLogEntries => Set<AuditLogEntry>();
+
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     public DbSet<AuthToken> AuthTokens => Set<AuthToken>();
@@ -47,6 +51,15 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
             entity.ToTable("studios");
             entity.HasKey(s => s.Id);
             entity.Property(s => s.Name).HasMaxLength(128).IsRequired(); 
+            entity.Property(s => s.Description).HasMaxLength(1000);
+            entity.Property(s => s.AvatarUrl).HasMaxLength(2048);
+            entity.Property(s => s.PublicSlug).HasMaxLength(128);
+            entity.HasIndex(s => s.PublicSlug).IsUnique().HasFilter("\"PublicSlug\" IS NOT NULL");
+            entity.Property(s => s.InvitationExpiryDays).IsRequired();
+            entity.Property(s => s.NotifyOnInvites).IsRequired();
+            entity.Property(s => s.NotifyOnMembers).IsRequired();
+            entity.Property(s => s.NotifyOnProjects).IsRequired();
+            entity.Property(s => s.NotifyOnMedia).IsRequired();
         });
 
         modelBuilder.Entity<UserStudio>(entity =>
@@ -64,6 +77,42 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
                 .WithMany()
                 .HasForeignKey(us => us.StudioId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<StudioInvitation>(entity =>
+        {
+            entity.ToTable("studio_invitations");
+            entity.HasKey(i => i.Id);
+            entity.Property(i => i.Email).HasMaxLength(256).IsRequired();
+            entity.Property(i => i.Role).HasConversion<string>().HasMaxLength(32).IsRequired();
+            entity.Property(i => i.TokenHash).HasMaxLength(128).IsRequired();
+            entity.HasIndex(i => i.TokenHash).IsUnique();
+            entity.HasIndex(i => new { i.StudioId, i.Email, i.Status });
+            entity.Property(i => i.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+
+            entity.HasOne<Studio>()
+                .WithMany()
+                .HasForeignKey(i => i.StudioId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne<User>()
+                .WithMany()
+                .HasForeignKey(i => i.InvitedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<AuditLogEntry>(entity =>
+        {
+            entity.ToTable("audit_log_entries");
+            entity.HasKey(a => a.Id);
+            entity.Property(a => a.WorkspaceKind).HasMaxLength(32).IsRequired();
+            entity.Property(a => a.Category).HasConversion<string>().HasMaxLength(32).IsRequired();
+            entity.Property(a => a.Action).HasMaxLength(128).IsRequired();
+            entity.Property(a => a.TargetKind).HasMaxLength(64).IsRequired();
+            entity.Property(a => a.Summary).HasMaxLength(1000).IsRequired();
+            entity.Property(a => a.MetadataJson).HasColumnType("jsonb");
+            entity.HasIndex(a => new { a.WorkspaceId, a.CreatedAt });
+            entity.HasIndex(a => a.Category);
         });
 
         modelBuilder.Entity<RefreshToken>(entity =>

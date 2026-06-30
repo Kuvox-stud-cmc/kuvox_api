@@ -21,6 +21,7 @@ namespace Kuvox.Api.Modules.Auth.Services;
 internal sealed class AuthService(
     IUserRepository users,
     ITokenService tokens,
+    IStudioService studioService,
     IPasswordHasher<User> passwordHasher,
     IMediator mediator,
     IEmailSender emailSender,
@@ -229,6 +230,11 @@ internal sealed class AuthService(
 
         stored.UsedAt = DateTimeOffset.UtcNow;
         await users.SaveChangesAsync(cancellationToken);
+
+        if (wasUnverified)
+        {
+            await studioService.ClaimPendingInvitationsForUserAsync(user.Id, user.Email, cancellationToken);
+        }
 
         // Auto-login: establish a session in the browser that opened the link.
         var issued = await IssueTokensAsync(user, cancellationToken);

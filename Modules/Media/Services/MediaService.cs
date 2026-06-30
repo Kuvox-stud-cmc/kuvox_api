@@ -65,6 +65,11 @@ internal sealed class MediaService(IMediaRepository media, IAuthApi auth, IMedia
             throw DomainException.BadRequest("Unknown owner.");
         }
 
+        if (scope.IsStudio && !caller.CanWriteStudioContent(scope.OwnerId))
+        {
+            throw DomainException.Forbidden("You do not have permission to create Studio media.");
+        }
+
         Models.Media item = request.Kind switch
         {
             MediaKind.Video => new Video
@@ -118,7 +123,7 @@ internal sealed class MediaService(IMediaRepository media, IAuthApi auth, IMedia
         Guid id, CallerContext caller, ShareMediaRequest request, CancellationToken cancellationToken = default)
     {
         var item = await LoadLiveAsync(id, cancellationToken);
-        RequireManage(item, caller);
+        RequireWrite(item, caller);
 
         var invitee = await auth.GetSummaryByEmailAsync(request.Email.Trim().ToLowerInvariant(), cancellationToken)
             ?? throw DomainException.NotFound("No user with that email.");
@@ -152,7 +157,7 @@ internal sealed class MediaService(IMediaRepository media, IAuthApi auth, IMedia
     public async Task UnshareAsync(Guid id, CallerContext caller, Guid userId, CancellationToken cancellationToken = default)
     {
         var item = await LoadLiveAsync(id, cancellationToken);
-        RequireManage(item, caller);
+        RequireWrite(item, caller);
 
         var share = await media.GetMediaUserAsync(item.Id, userId, cancellationToken);
         if (share is not null)
@@ -165,7 +170,7 @@ internal sealed class MediaService(IMediaRepository media, IAuthApi auth, IMedia
     public async Task SoftDeleteAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default)
     {
         var item = await LoadLiveAsync(id, cancellationToken);
-        RequireManage(item, caller);
+        RequireWrite(item, caller);
 
         item.DeletedAt = DateTimeOffset.UtcNow;
         item.UpdatedAt = DateTimeOffset.UtcNow;
@@ -176,7 +181,7 @@ internal sealed class MediaService(IMediaRepository media, IAuthApi auth, IMedia
     {
         var item = await media.GetByIdAsync(id, cancellationToken)
             ?? throw DomainException.NotFound("Media not found.");
-        RequireManage(item, caller);
+        RequireTrashManage(item, caller);
 
         item.DeletedAt = null;
         item.UpdatedAt = DateTimeOffset.UtcNow;
@@ -187,7 +192,7 @@ internal sealed class MediaService(IMediaRepository media, IAuthApi auth, IMedia
     {
         var item = await media.GetByIdAsync(id, cancellationToken)
             ?? throw DomainException.NotFound("Media not found.");
-        RequireManage(item, caller);
+        RequireTrashManage(item, caller);
 
         media.Remove(item);
         await media.SaveChangesAsync(cancellationToken);
@@ -203,22 +208,40 @@ internal sealed class MediaService(IMediaRepository media, IAuthApi auth, IMedia
             : item;
     }
 
-    private static bool CanManage(Models.Media item, CallerContext caller) =>
+    private static bool CanRead(Models.Media item, CallerContext caller) =>
         item.OwnerKind == OwnerKind.User
             ? caller.OwnsAsUser(item.OwnerId)
             : caller.InStudio(item.OwnerId);
 
-    private static void RequireManage(Models.Media item, CallerContext caller)
+    private static bool CanWrite(Models.Media item, CallerContext caller) =>
+        item.OwnerKind == OwnerKind.User
+            ? caller.OwnsAsUser(item.OwnerId)
+            : caller.CanWriteStudioContent(item.OwnerId);
+
+    private static bool CanManageTrash(Models.Media item, CallerContext caller) =>
+        item.OwnerKind == OwnerKind.User
+            ? caller.OwnsAsUser(item.OwnerId)
+            : caller.CanManageStudioAccess(item.OwnerId);
+
+    private static void RequireWrite(Models.Media item, CallerContext caller)
     {
-        if (!CanManage(item, caller))
+        if (!CanWrite(item, caller))
         {
             throw DomainException.Forbidden("You do not have permission to modify this media item.");
         }
     }
 
+    private static void RequireTrashManage(Models.Media item, CallerContext caller)
+    {
+        if (!CanManageTrash(item, caller))
+        {
+            throw DomainException.Forbidden("You do not have permission to manage Studio trash.");
+        }
+    }
+
     private async Task<bool> CanAccessAsync(Models.Media item, CallerContext caller, CancellationToken cancellationToken)
     {
-        if (CanManage(item, caller))
+        if (CanRead(item, caller))
         {
             return true;
         }

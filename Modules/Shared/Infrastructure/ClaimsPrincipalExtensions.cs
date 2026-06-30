@@ -48,9 +48,12 @@ public static class ClaimsPrincipalExtensions
     public static bool BelongsToStudio(this ClaimsPrincipal user, Guid studioId) =>
         user.GetStudios().Any(s => s.StudioId == studioId);
 
-    /// <summary>True if the caller carries an <c>Admin</c> membership claim for the given studio.</summary>
+    /// <summary>True if the caller carries an <c>Owner</c> or <c>Admin</c> membership claim for the given studio.</summary>
     public static bool IsStudioAdmin(this ClaimsPrincipal user, Guid studioId) =>
-        user.GetStudios().Any(s => s.StudioId == studioId && string.Equals(s.Role, "Admin", StringComparison.Ordinal));
+        user.GetStudios().Any(s =>
+            s.StudioId == studioId
+            && (string.Equals(s.Role, "Owner", StringComparison.Ordinal)
+                || string.Equals(s.Role, "Admin", StringComparison.Ordinal)));
 
     /// <summary>Snapshots the caller (id + studios) for passing into services.</summary>
     public static CallerContext? ToCallerContext(this ClaimsPrincipal user)

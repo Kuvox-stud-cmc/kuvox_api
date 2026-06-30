@@ -1,5 +1,6 @@
 using Kuvox.Api.Modules.Auth.Enums;
 using Kuvox.Api.Modules.Auth.Models;
+using Kuvox.Api.Modules.Shared.Dtos;
 using Microsoft.EntityFrameworkCore;
 
 namespace Kuvox.Api.Modules.Auth.Repositories;
@@ -39,8 +40,66 @@ internal sealed class StudioRepository(AuthDbContext db) : IStudioRepository
         return rows.Select(r => (r.User, r.Role)).ToList();
     }
 
-    public Task<int> CountAdminsAsync(Guid studioId, CancellationToken cancellationToken = default) =>
-        db.UserStudios.CountAsync(us => us.StudioId == studioId && us.Role == UserStudioRole.Admin, cancellationToken);
+    public Task<int> CountPrivilegedMembersAsync(Guid studioId, CancellationToken cancellationToken = default) =>
+        db.UserStudios.CountAsync(
+            us => us.StudioId == studioId && (us.Role == UserStudioRole.Owner || us.Role == UserStudioRole.Admin),
+            cancellationToken);
+
+    public Task<int> CountMembersAsync(Guid studioId, CancellationToken cancellationToken = default) =>
+        db.UserStudios.CountAsync(us => us.StudioId == studioId, cancellationToken);
+
+    public async Task<IReadOnlyList<StudioInvitation>> ListInvitationsAsync(
+        Guid studioId, CancellationToken cancellationToken = default) =>
+        await db.StudioInvitations
+            .Where(i => i.StudioId == studioId)
+            .OrderByDescending(i => i.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+    public Task<StudioInvitation?> GetInvitationAsync(
+        Guid studioId, Guid invitationId, CancellationToken cancellationToken = default) =>
+        db.StudioInvitations.FirstOrDefaultAsync(i => i.StudioId == studioId && i.Id == invitationId, cancellationToken);
+
+    public Task<StudioInvitation?> GetInvitationByTokenHashAsync(
+        string tokenHash, CancellationToken cancellationToken = default) =>
+        db.StudioInvitations.FirstOrDefaultAsync(i => i.TokenHash == tokenHash, cancellationToken);
+
+    public async Task<IReadOnlyList<StudioInvitation>> ListClaimableInvitationsAsync(
+        string email, CancellationToken cancellationToken = default) =>
+        await db.StudioInvitations
+            .Where(i => i.Email == email && i.Status == StudioInvitationStatus.Pending && i.ExpiresAt > DateTimeOffset.UtcNow)
+            .OrderBy(i => i.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+    public async Task AddInvitationAsync(StudioInvitation invitation, CancellationToken cancellationToken = default) =>
+        await db.StudioInvitations.AddAsync(invitation, cancellationToken);
+
+    public async Task AddAuditEntryAsync(AuditLogEntry entry, CancellationToken cancellationToken = default) =>
+        await db.AuditLogEntries.AddAsync(entry, cancellationToken);
+
+    public async Task<PagedResult<AuditLogEntry>> ListAuditLogAsync(
+        Guid studioId,
+        int page,
+        int pageSize,
+        StudioAuditCategory? category = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = db.AuditLogEntries
+            .Where(a => a.WorkspaceKind == "Studio" && a.WorkspaceId == studioId);
+
+        if (category is not null)
+        {
+            query = query.Where(a => a.Category == category);
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderByDescending(a => a.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return new PagedResult<AuditLogEntry>(items, page, pageSize, total);
+    }
 
     public async Task AddStudioAsync(Studio studio, CancellationToken cancellationToken = default) =>
         await db.Studios.AddAsync(studio, cancellationToken);

@@ -68,6 +68,11 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
             throw DomainException.BadRequest("Unknown owner.");
         }
 
+        if (scope.IsStudio && !caller.CanWriteStudioContent(scope.OwnerId))
+        {
+            throw DomainException.Forbidden("You do not have permission to create Studio projects.");
+        }
+
         var project = new Project
         {
             OwnerId = scope.OwnerId,
@@ -87,7 +92,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
         Guid id, CallerContext caller, UpdateProjectRequest request, CancellationToken cancellationToken = default)
     {
         var project = await LoadLiveAsync(id, cancellationToken);
-        RequireManage(project, caller);
+        RequireWrite(project, caller);
 
         project.Name = request.Name.Trim();
         project.Description = request.Description?.Trim();
@@ -102,7 +107,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
         Guid id, CallerContext caller, ShareProjectRequest request, CancellationToken cancellationToken = default)
     {
         var project = await LoadLiveAsync(id, cancellationToken);
-        RequireManage(project, caller);
+        RequireWrite(project, caller);
 
         var invitee = await auth.GetSummaryByEmailAsync(request.Email.Trim().ToLowerInvariant(), cancellationToken)
             ?? throw DomainException.NotFound("No user with that email.");
@@ -131,7 +136,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
     public async Task UnshareAsync(Guid id, CallerContext caller, Guid userId, CancellationToken cancellationToken = default)
     {
         var project = await LoadLiveAsync(id, cancellationToken);
-        RequireManage(project, caller);
+        RequireWrite(project, caller);
 
         var share = await projects.GetProjectUserAsync(project.Id, userId, cancellationToken);
         if (share is not null)
@@ -144,7 +149,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
     public async Task SoftDeleteAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default)
     {
         var project = await LoadLiveAsync(id, cancellationToken);
-        RequireManage(project, caller);
+        RequireWrite(project, caller);
 
         project.DeletedAt = DateTimeOffset.UtcNow;
         project.UpdatedAt = DateTimeOffset.UtcNow;
@@ -155,7 +160,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
     {
         var project = await projects.GetByIdAsync(id, cancellationToken)
             ?? throw DomainException.NotFound("Project not found.");
-        RequireManage(project, caller);
+        RequireTrashManage(project, caller);
 
         project.DeletedAt = null;
         project.UpdatedAt = DateTimeOffset.UtcNow;
@@ -166,7 +171,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
     {
         var project = await projects.GetByIdAsync(id, cancellationToken)
             ?? throw DomainException.NotFound("Project not found.");
-        RequireManage(project, caller);
+        RequireTrashManage(project, caller);
 
         projects.Remove(project);
         await projects.SaveChangesAsync(cancellationToken);
@@ -183,23 +188,40 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
             : project;
     }
 
-    /// <summary>Owner of the workspace: the user (Personal) or any studio member (Team).</summary>
-    private static bool CanManage(Project project, CallerContext caller) =>
+    private static bool CanRead(Project project, CallerContext caller) =>
         project.OwnerKind == OwnerKind.User
             ? caller.OwnsAsUser(project.OwnerId)
             : caller.InStudio(project.OwnerId);
 
-    private static void RequireManage(Project project, CallerContext caller)
+    private static bool CanWrite(Project project, CallerContext caller) =>
+        project.OwnerKind == OwnerKind.User
+            ? caller.OwnsAsUser(project.OwnerId)
+            : caller.CanWriteStudioContent(project.OwnerId);
+
+    private static bool CanManageTrash(Project project, CallerContext caller) =>
+        project.OwnerKind == OwnerKind.User
+            ? caller.OwnsAsUser(project.OwnerId)
+            : caller.CanManageStudioAccess(project.OwnerId);
+
+    private static void RequireWrite(Project project, CallerContext caller)
     {
-        if (!CanManage(project, caller))
+        if (!CanWrite(project, caller))
         {
             throw DomainException.Forbidden("You do not have permission to modify this project.");
         }
     }
 
+    private static void RequireTrashManage(Project project, CallerContext caller)
+    {
+        if (!CanManageTrash(project, caller))
+        {
+            throw DomainException.Forbidden("You do not have permission to manage Studio trash.");
+        }
+    }
+
     private async Task<bool> CanAccessAsync(Project project, CallerContext caller, CancellationToken cancellationToken)
     {
-        if (CanManage(project, caller))
+        if (CanRead(project, caller))
         {
             return true;
         }

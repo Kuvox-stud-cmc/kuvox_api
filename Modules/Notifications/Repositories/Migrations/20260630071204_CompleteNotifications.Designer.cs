@@ -3,17 +3,20 @@ using System;
 using Kuvox.Api.Modules.Notifications.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace Kuvox.Api.Migrations
+namespace Kuvox.Api.Modules.Notifications.Repositories.Migrations
 {
     [DbContext(typeof(NotificationsDbContext))]
-    partial class NotificationsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260630071204_CompleteNotifications")]
+    partial class CompleteNotifications
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -32,24 +35,17 @@ namespace Kuvox.Api.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("LinkUrl")
-                        .HasMaxLength(2048)
-                        .HasColumnType("character varying(2048)");
-
                     b.Property<string>("Message")
                         .IsRequired()
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
-
-                    b.Property<DateTimeOffset?>("ReadAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
-                    b.Property<Guid?>("StudioId")
+                    b.Property<Guid>("StudioId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("Type")
@@ -65,8 +61,6 @@ namespace Kuvox.Api.Migrations
                     b.HasIndex("StudioId");
 
                     b.HasIndex("UserId");
-
-                    b.HasIndex("UserId", "Status", "CreatedAt");
 
                     b.ToTable("notifications", "notifications");
                 });

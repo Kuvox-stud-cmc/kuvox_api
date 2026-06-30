@@ -71,7 +71,9 @@ public static class AuthModule
             .AddPolicy(RequireAdminPolicy, policy =>
                 policy.RequireAssertion(ctx =>
                     ctx.User.FindAll(TokenService.StudioClaimType)
-                        .Any(c => c.Value.EndsWith($":{Enums.UserStudioRole.Admin}", StringComparison.Ordinal))))
+                        .Any(c =>
+                            c.Value.EndsWith($":{Enums.UserStudioRole.Owner}", StringComparison.Ordinal)
+                            || c.Value.EndsWith($":{Enums.UserStudioRole.Admin}", StringComparison.Ordinal))))
             .AddPolicy(RequireCreatorPolicy, policy =>
                 policy.RequireClaim(TokenService.PlanClaimType, Enums.UserPlan.Creator.ToString()));
 

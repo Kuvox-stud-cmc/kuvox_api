@@ -59,9 +59,10 @@ The API will be available at `https://localhost:5001` (or `http://localhost:5000
 
 | Module      | Tables (schema)                                                       | Responsibility                                                          |
 | ----------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `Auth`      | `auth.users`                                                          | User registration, login, JWT issuance and refresh                      |
+| `Auth`      | `auth.users`, `auth.studios`, `auth.user_studios`, `auth.studio_invitations`, `auth.audit_log_entries` | User registration, login, JWT issuance, refresh, Studio access, invitations, settings, audit |
 | `Projects`  | `projects.projects`                                                   | CRUD for projects                                                       |
-| `Videos`    | `videos.videos`                                                       | File upload orchestration, metadata, ingestion status (the old "Media") |
+| `Media`     | `media.*`                                                             | Media library metadata, albums, sharing, Studio-scoped media records    |
+| `Notifications` | `notifications.notifications`                                    | In-app notifications, unread counts, read/archive/delete lifecycle      |
 | `Timelines` | `timelines.{timelines,timeline_revisions,render_jobs,command_history}`| Timeline state, revisions (JSONB ops), render jobs, NL command history  |
 | `Shared`    | — (no tables)                                                         | Shared kernel: `BaseEntity`, common DTOs, MediatR markers, health, 501 handler |
 
@@ -80,14 +81,13 @@ are enforced (by convention within the single assembly — see the caveat below)
    publisher's `Contracts/`; subscribers implement `INotificationHandler<>` internally
    (e.g. `ProjectDeletedEvent` → Timelines & Videos cleanup handlers).
 
-### Scaffold status
+### Implementation status
 
-Each module ships **two controllers**: a working **mockup** controller at
-`/api/mock/{resource}` returning canned data (for frontend integration today), and the
-**real** controller at `/api/{resource}` whose service layer is scaffolded but not yet
-implemented — those endpoints return **`501 Not Implemented`**. In `Development`, all four
-DbContexts auto-migrate on startup, so `docker compose up` + `dotnet watch run` yields a
-fully schema'd database with no manual `dotnet ef` steps.
+The main Auth, Studio, Projects, Media, Timelines, and Notifications controllers are backed
+by service/repository code. Studio access uses fixed roles (`Owner`, `Admin`, `Member`,
+`Viewer`), email invitations, settings, audit-log APIs, and notification events.
+In `Development`, module DbContexts auto-migrate on startup, so `docker compose up` +
+`dotnet watch run` applies pending EF migrations without manual `dotnet ef` steps.
 
 > **Single-assembly caveat:** because every module lives in one `api.csproj`, `internal`
 > and the `Contracts`-only boundary are conventions, not compiler-enforced isolation. To

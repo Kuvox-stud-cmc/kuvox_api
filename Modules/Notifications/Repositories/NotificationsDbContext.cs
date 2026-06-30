@@ -19,14 +19,17 @@ public sealed class NotificationsDbContext(DbContextOptions<NotificationsDbConte
             entity.ToTable("notifications");
             entity.HasKey(n => n.Id);
             entity.Property(n => n.UserId).IsRequired();
-            entity.Property(n => n.StudioId).IsRequired();
+            entity.Property(n => n.StudioId);
             entity.Property(n => n.Type).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(n => n.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(n => n.Message).HasMaxLength(2000).IsRequired();
+            entity.Property(n => n.LinkUrl).HasMaxLength(2048);
+            entity.Property(n => n.ReadAt);
         
             // Index for userId and studioId to efficiently query notifications for a user or a studio.
             entity.HasIndex(n => n.UserId);
             entity.HasIndex(n => n.StudioId);
+            entity.HasIndex(n => new { n.UserId, n.Status, n.CreatedAt });
         });
 
         base.OnModelCreating(modelBuilder);

@@ -1,4 +1,6 @@
 using Kuvox.Api.Modules.Auth.Dtos;
+using Kuvox.Api.Modules.Auth.Enums;
+using Kuvox.Api.Modules.Shared.Dtos;
 
 namespace Kuvox.Api.Modules.Auth.Services;
 
@@ -21,6 +23,42 @@ public interface IStudioService
 
     /// <summary>Adds an existing user (by email) to the studio (Admin-only).</summary>
     Task<StudioMemberDto> AddMemberAsync(Guid studioId, Guid callerUserId, AddStudioMemberRequest request, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<StudioInvitationDto>> ListInvitationsAsync(Guid studioId, Guid callerUserId, CancellationToken cancellationToken = default);
+
+    Task<StudioInvitationDto> CreateInvitationAsync(Guid studioId, Guid callerUserId, CreateStudioInvitationRequest request, CancellationToken cancellationToken = default);
+
+    Task<StudioInvitationDto> ResendInvitationAsync(Guid studioId, Guid callerUserId, Guid invitationId, CancellationToken cancellationToken = default);
+
+    Task RevokeInvitationAsync(Guid studioId, Guid callerUserId, Guid invitationId, CancellationToken cancellationToken = default);
+
+    Task AcceptInvitationAsync(string token, Guid? callerUserId = null, CancellationToken cancellationToken = default);
+
+    Task DeclineInvitationAsync(string token, CancellationToken cancellationToken = default);
+
+    Task<int> ClaimPendingInvitationsForUserAsync(Guid userId, string email, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<StudioRoleDto>> GetRolesAsync(Guid studioId, Guid callerUserId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<StudioPermissionDto>> GetPermissionsAsync(Guid studioId, Guid callerUserId, CancellationToken cancellationToken = default);
+
+    Task<PagedResult<StudioAuditLogEntryDto>> GetAuditLogAsync(
+        Guid studioId,
+        Guid callerUserId,
+        int page,
+        int pageSize,
+        StudioAuditCategory? category = null,
+        CancellationToken cancellationToken = default);
+
+    Task<StudioWorkspaceSettingsDto> GetWorkspaceSettingsAsync(Guid studioId, Guid callerUserId, CancellationToken cancellationToken = default);
+
+    Task<StudioWorkspaceSettingsDto> UpdateWorkspaceSettingsAsync(Guid studioId, Guid callerUserId, UpdateStudioWorkspaceSettingsRequest request, CancellationToken cancellationToken = default);
+
+    Task<StudioNotificationSettingsDto> GetNotificationSettingsAsync(Guid studioId, Guid callerUserId, CancellationToken cancellationToken = default);
+
+    Task<StudioNotificationSettingsDto> UpdateNotificationSettingsAsync(Guid studioId, Guid callerUserId, UpdateStudioNotificationSettingsRequest request, CancellationToken cancellationToken = default);
+
+    Task<StudioUsageSummaryDto> GetUsageSummaryAsync(Guid studioId, Guid callerUserId, CancellationToken cancellationToken = default);
 
     /// <summary>Changes a member's role (Admin-only; cannot demote the last Admin).</summary>
     Task<StudioMemberDto> UpdateMemberAsync(Guid studioId, Guid callerUserId, Guid targetUserId, UpdateStudioMemberRequest request, CancellationToken cancellationToken = default);

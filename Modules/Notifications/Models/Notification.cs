@@ -6,11 +6,15 @@ public sealed class Notification : ImmutableBaseEntity
 {
     public required Guid UserId { get; set; }
 
-    public required Guid StudioId { get; set; }
+    public Guid? StudioId { get; set; }
 
     public required NotificationType Type { get; set; }
 
     public required NotificationStatus Status { get; set; }
 
     public required string Message { get; set; }
+
+    public string? LinkUrl { get; set; }
+
+    public DateTimeOffset? ReadAt { get; set; }
 }

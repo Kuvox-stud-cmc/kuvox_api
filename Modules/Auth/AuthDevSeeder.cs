@@ -36,9 +36,9 @@ public static class AuthDevSeeder
     private static SeedUser[] BuildSeedUsers(IConfiguration config) =>
     [
         new((config["DevSeed:Email"] ?? "dev@kuvox.local").Trim().ToLowerInvariant(),
-            config["DevSeed:DisplayName"] ?? "Dev User", UserStudioRole.Admin),
+            config["DevSeed:DisplayName"] ?? "Dev User", UserStudioRole.Owner),
         new("alice@kuvox.local", "Alice Admin", UserStudioRole.Admin),
-        new("bob@kuvox.local", "Bob Member", UserStudioRole.User),
+        new("bob@kuvox.local", "Bob Member", UserStudioRole.Member),
         new("carol@kuvox.local", "Carol Solo", null),
     ];
 
