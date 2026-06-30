@@ -39,16 +39,42 @@ public sealed class AuthController(IAuthService auth) : ControllerBase
     [HttpGet("me")]
     public async Task<ActionResult<UserDto>> Me(CancellationToken ct)
     {
-        var sub = User.FindFirstValue(JwtRegisteredClaimNames.Sub)
-            ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
-
-        if (!Guid.TryParse(sub, out var userId))
-        {
-            return Unauthorized();
-        }
-
-        var user = await auth.GetCurrentUserAsync(userId, ct);
+        var user = await auth.GetCurrentUserAsync(CurrentUserId(), ct);
         return user is null ? NotFound() : Ok(user);
+    }
+
+    [Authorize]
+    [HttpGet("me/settings")]
+    public async Task<ActionResult<UserSettingsDto>> Settings(CancellationToken ct)
+    {
+        var settings = await auth.GetSettingsAsync(CurrentUserId(), ct);
+        return settings is null ? NotFound() : Ok(settings);
+    }
+
+    [Authorize]
+    [HttpPatch("me/profile")]
+    public async Task<ActionResult<UserDto>> UpdateProfile(UpdateProfileRequest request, CancellationToken ct) =>
+        Ok(await auth.UpdateProfileAsync(CurrentUserId(), request, ct));
+
+    [Authorize]
+    [HttpPatch("me/preferences")]
+    public async Task<ActionResult<UserPreferencesDto>> UpdatePreferences(UpdatePreferencesRequest request, CancellationToken ct) =>
+        Ok(await auth.UpdatePreferencesAsync(CurrentUserId(), request, ct));
+
+    [Authorize]
+    [HttpPost("me/change-password")]
+    public async Task<IActionResult> ChangePassword(ChangePasswordRequest request, CancellationToken ct)
+    {
+        await auth.ChangePasswordAsync(CurrentUserId(), request, ct);
+        return NoContent();
+    }
+
+    [Authorize]
+    [HttpPost("me/resend-verification")]
+    public async Task<IActionResult> ResendVerification(CancellationToken ct)
+    {
+        await auth.ResendVerificationAsync(CurrentUserId(), ct);
+        return NoContent();
     }
 
     [HttpPost("verify-email")]
@@ -76,5 +102,17 @@ public sealed class AuthController(IAuthService auth) : ControllerBase
         await auth.ResetPasswordAsync(request.Token, request.NewPassword, ct);
         return NoContent();
     }
-}
 
+    private Guid CurrentUserId()
+    {
+        var sub = User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+            ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (!Guid.TryParse(sub, out var userId))
+        {
+            throw AuthException.Unauthorized("Invalid token.");
+        }
+
+        return userId;
+    }
+}

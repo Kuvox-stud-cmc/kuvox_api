@@ -131,6 +131,82 @@ internal sealed class AuthService(
         return user is null ? null : ToDto(user);
     }
 
+    public async Task<UserSettingsDto?> GetSettingsAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var user = await users.GetByIdAsync(userId, cancellationToken);
+        return user is null ? null : ToSettingsDto(user);
+    }
+
+    public async Task<UserDto> UpdateProfileAsync(
+        Guid userId,
+        UpdateProfileRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await users.GetByIdAsync(userId, cancellationToken)
+            ?? throw AuthException.NotFound("User not found.");
+
+        var displayName = request.DisplayName.Trim();
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            throw AuthException.BadRequest("Display name is required.");
+        }
+
+        if (displayName.Length > 128)
+        {
+            throw AuthException.BadRequest("Display name must be 128 characters or fewer.");
+        }
+
+        user.DisplayName = displayName;
+        await users.SaveChangesAsync(cancellationToken);
+
+        return ToDto(user);
+    }
+
+    public async Task<UserPreferencesDto> UpdatePreferencesAsync(
+        Guid userId,
+        UpdatePreferencesRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await users.GetByIdAsync(userId, cancellationToken)
+            ?? throw AuthException.NotFound("User not found.");
+
+        var defaultEditorMode = NormalizeEditorMode(request.DefaultEditorMode);
+
+        user.EmailNotificationsEnabled = request.EmailNotificationsEnabled;
+        user.ProductUpdatesEnabled = request.ProductUpdatesEnabled;
+        user.WeeklyDigestEnabled = request.WeeklyDigestEnabled;
+        user.DefaultEditorMode = defaultEditorMode;
+
+        await users.SaveChangesAsync(cancellationToken);
+
+        return ToPreferencesDto(user);
+    }
+
+    public async Task ChangePasswordAsync(
+        Guid userId,
+        ChangePasswordRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await users.GetByIdAsync(userId, cancellationToken)
+            ?? throw AuthException.NotFound("User not found.");
+
+        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 8)
+        {
+            throw AuthException.BadRequest("Password must be at least 8 characters.");
+        }
+
+        var verification = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.CurrentPassword);
+        if (verification == PasswordVerificationResult.Failed)
+        {
+            throw AuthException.Unauthorized("Current password is incorrect.");
+        }
+
+        user.PasswordHash = passwordHasher.HashPassword(user, request.NewPassword);
+        await users.SaveChangesAsync(cancellationToken);
+
+        await users.RevokeAllRefreshTokensAsync(user.Id, cancellationToken);
+    }
+
     // ── Email verification ──────────────────────────────────────────────────────
 
     public async Task<VerifyEmailResult> VerifyEmailAsync(string token, CancellationToken cancellationToken = default)
@@ -303,4 +379,27 @@ internal sealed class AuthService(
 
     private static UserDto ToDto(User user) =>
         new(user.Id, user.Email, user.DisplayName, "user", user.Plan.ToString(), user.EmailVerifiedAt is not null, user.CreatedAt);
+
+    private static UserSettingsDto ToSettingsDto(User user) =>
+        new(ToDto(user), ToPreferencesDto(user), ToPlanLimitsDto(user.Plan));
+
+    private static UserPreferencesDto ToPreferencesDto(User user) =>
+        new(
+            user.EmailNotificationsEnabled,
+            user.ProductUpdatesEnabled,
+            user.WeeklyDigestEnabled,
+            user.DefaultEditorMode);
+
+    private static PlanLimitsDto ToPlanLimitsDto(UserPlan plan) =>
+        plan switch
+        {
+            UserPlan.Creator => new(plan.ToString(), 1024L * 1024L * 1024L * 1024L, 500, 5, true),
+            _ => new(plan.ToString(), 25L * 1024L * 1024L * 1024L, 10, 1, false),
+        };
+
+    private static string NormalizeEditorMode(string value)
+    {
+        var normalized = value.Trim().ToLowerInvariant();
+        return normalized is "manual" or "ai" ? normalized : "manual";
+    }
 }

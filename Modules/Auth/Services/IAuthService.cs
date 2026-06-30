@@ -20,6 +20,14 @@ public interface IAuthService
 
     Task<UserDto?> GetCurrentUserAsync(Guid userId, CancellationToken cancellationToken = default);
 
+    Task<UserSettingsDto?> GetSettingsAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    Task<UserDto> UpdateProfileAsync(Guid userId, UpdateProfileRequest request, CancellationToken cancellationToken = default);
+
+    Task<UserPreferencesDto> UpdatePreferencesAsync(Guid userId, UpdatePreferencesRequest request, CancellationToken cancellationToken = default);
+
+    Task ChangePasswordAsync(Guid userId, ChangePasswordRequest request, CancellationToken cancellationToken = default);
+
     Task<VerifyEmailResult> VerifyEmailAsync(string token, CancellationToken cancellationToken = default);
 
     Task ResendVerificationAsync(Guid userId, CancellationToken cancellationToken = default);

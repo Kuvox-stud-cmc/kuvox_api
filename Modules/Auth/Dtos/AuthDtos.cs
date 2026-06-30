@@ -21,3 +21,35 @@ public sealed record ResendVerificationRequest(string Email);
 public sealed record ForgotPasswordRequest(string Email);
 
 public sealed record ResetPasswordRequest(string Token, string NewPassword);
+
+public sealed record UserPreferencesDto(
+    bool EmailNotificationsEnabled,
+    bool ProductUpdatesEnabled,
+    bool WeeklyDigestEnabled,
+    string DefaultEditorMode
+);
+
+public sealed record PlanLimitsDto(
+    string Plan,
+    long StorageBytes,
+    int Projects,
+    int TeamSeats,
+    bool PrioritySupport
+);
+
+public sealed record UserSettingsDto(
+    UserDto User,
+    UserPreferencesDto Preferences,
+    PlanLimitsDto PlanLimits
+);
+
+public sealed record UpdateProfileRequest(string DisplayName);
+
+public sealed record UpdatePreferencesRequest(
+    bool EmailNotificationsEnabled,
+    bool ProductUpdatesEnabled,
+    bool WeeklyDigestEnabled,
+    string DefaultEditorMode
+);
+
+public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);

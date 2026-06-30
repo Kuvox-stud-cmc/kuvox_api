@@ -36,6 +36,10 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
             entity.Property(u => u.DisplayName).HasMaxLength(128).IsRequired();
             entity.Property(u => u.Plan).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(u => u.EmailVerifiedAt);
+            entity.Property(u => u.EmailNotificationsEnabled).IsRequired();
+            entity.Property(u => u.ProductUpdatesEnabled).IsRequired();
+            entity.Property(u => u.WeeklyDigestEnabled).IsRequired();
+            entity.Property(u => u.DefaultEditorMode).HasMaxLength(16).IsRequired();
         });
 
         modelBuilder.Entity<Studio>(entity =>

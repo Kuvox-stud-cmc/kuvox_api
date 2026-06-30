@@ -15,4 +15,12 @@ public sealed class User : BaseEntity
 
     /// <summary>When the user confirmed their email; <c>null</c> while unverified (soft gate).</summary>
     public DateTimeOffset? EmailVerifiedAt { get; set; }
+
+    public bool EmailNotificationsEnabled { get; set; } = true;
+
+    public bool ProductUpdatesEnabled { get; set; } = true;
+
+    public bool WeeklyDigestEnabled { get; set; } = false;
+
+    public string DefaultEditorMode { get; set; } = "manual";
 }
