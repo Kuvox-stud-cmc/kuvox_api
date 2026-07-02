@@ -15,7 +15,6 @@ public class SeaweedFileStorageService : IFileStorageService
 
   public async Task<StoredMediaObject> UploadRawAsync(
     IFormFile file,
-    Guid projectId,
     Guid mediaId,
     CancellationToken cancellationToken = default
   )
@@ -26,7 +25,7 @@ public class SeaweedFileStorageService : IFileStorageService
     }
 
     var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
-    var objectKey = $"projects/{projectId}/media/{mediaId}/raw/original{extension}";
+    var objectKey = $"media/{mediaId}/raw/original{extension}";
 
     await EnsureBucketExistsAsync(RawBucketName, cancellationToken);
 

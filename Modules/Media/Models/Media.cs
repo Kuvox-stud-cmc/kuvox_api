@@ -6,9 +6,8 @@ namespace Kuvox.Api.Modules.Media.Models;
 
 /// <summary>
 /// A user/studio-owned media item (video, image, or audio) + extracted metadata. Owned by the
-/// Media module (table <c>media.media</c>). <see cref="OwnerId"/> and <see cref="ProjectId"/>
-/// reference other modules by id only (no cross-schema FK). Soft-deleted via
-/// <see cref="DeletedAt"/> into Trash.
+/// Media module. <see cref="OwnerId"/> references other modules by id only (no cross-schema FK).
+/// Soft-deleted via <see cref="DeletedAt"/> into Trash.
 /// </summary>
 public abstract class Media : BaseEntity
 {
@@ -20,12 +19,9 @@ public abstract class Media : BaseEntity
 
     public required OwnerKind OwnerKind { get; set; }
 
-    /// <summary>Optional project this media belongs to. Stored as an id only; Projects owns the row.</summary>
-    public Guid? ProjectId { get; set; }
-
     public required string Filename { get; set; }
 
-    /// <summary>Object-storage key for the raw upload (S3/SeaweedFS).</summary>
+    /// <summary>Current primary object-storage key. Raw immediately after upload; canonical after optimization.</summary>
     public required string StorageKey { get; set; }
 
     public long SizeBytes { get; set; }
@@ -39,6 +35,30 @@ public abstract class Media : BaseEntity
     public string? ErrorMessage { get; set; }
 
     public string? Codec { get; set; }
+
+    public string? RawBucketName { get; set; }
+
+    public string? RawStorageKey { get; set; }
+
+    public long? RawSizeBytes { get; set; }
+
+    public string? CanonicalBucketName { get; set; }
+
+    public string? CanonicalStorageKey { get; set; }
+
+    public long? CanonicalSizeBytes { get; set; }
+
+    public string? ProxyBucketName { get; set; }
+
+    public string? ProxyStorageKey { get; set; }
+
+    public long? ProxySizeBytes { get; set; }
+
+    public string? ThumbnailBucketName { get; set; }
+
+    public string? ThumbnailStorageKey { get; set; }
+
+    public long? ThumbnailSizeBytes { get; set; }
 
     /// <summary>Soft-delete timestamp; non-null means the item is in Trash.</summary>
     public DateTimeOffset? DeletedAt { get; set; }

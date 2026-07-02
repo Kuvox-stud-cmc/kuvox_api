@@ -9,12 +9,6 @@ internal sealed class MediaRepository(MediaDbContext db) : IMediaRepository
     public Task<Models.Media?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
         db.Media.FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
 
-    public async Task<IReadOnlyList<Models.Media>> ListByProjectAsync(Guid projectId, CancellationToken cancellationToken = default) =>
-        await db.Media.Where(m => m.ProjectId == projectId).ToListAsync(cancellationToken);
-
-    public Task<int> CountByProjectAsync(Guid projectId, CancellationToken cancellationToken = default) =>
-        db.Media.CountAsync(m => m.ProjectId == projectId, cancellationToken);
-
     public async Task<(IReadOnlyList<Models.Media> Items, int Total)> ListByWorkspaceAsync(
         OwnerKind ownerKind, Guid ownerId, int page, int pageSize, CancellationToken cancellationToken = default)
     {
@@ -81,9 +75,6 @@ internal sealed class MediaRepository(MediaDbContext db) : IMediaRepository
     public void RemoveMediaUser(MediaUser mediaUser) => db.MediaUsers.Remove(mediaUser);
 
     public void Remove(Models.Media media) => db.Media.Remove(media);
-
-    public Task<int> DeleteByProjectAsync(Guid projectId, CancellationToken cancellationToken = default) =>
-        db.Media.Where(m => m.ProjectId == projectId).ExecuteDeleteAsync(cancellationToken);
 
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);

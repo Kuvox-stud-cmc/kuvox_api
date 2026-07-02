@@ -11,7 +11,6 @@ public interface IFileStorageService
 {
   Task<StoredMediaObject> UploadRawAsync(
     IFormFile file,
-    Guid projectId,
     Guid mediaId,
     CancellationToken cancellationToken = default
   );

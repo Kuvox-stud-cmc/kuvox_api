@@ -70,8 +70,14 @@ internal sealed class ProjectRepository(ProjectsDbContext db) : IProjectReposito
     public Task<ProjectUser?> GetProjectUserAsync(Guid projectId, Guid userId, CancellationToken cancellationToken = default) =>
         db.ProjectUsers.FirstOrDefaultAsync(pu => pu.ProjectId == projectId && pu.UserId == userId, cancellationToken);
 
-    public Task<ProjectMedia?> GetProjectMediaByMediaIdAsync(Guid mediaId, CancellationToken cancellationToken = default) =>
-        db.ProjectMedias.FirstOrDefaultAsync(pm => pm.MediaId == mediaId, cancellationToken);
+    public async Task<int> DeleteProjectMediaByMediaIdAsync(Guid mediaId, CancellationToken cancellationToken = default)
+    {
+        var deleted = 0;
+        deleted += await db.ProjectImages.Where(pm => pm.MediaId == mediaId).ExecuteDeleteAsync(cancellationToken);
+        deleted += await db.ProjectAudios.Where(pm => pm.MediaId == mediaId).ExecuteDeleteAsync(cancellationToken);
+        deleted += await db.ProjectVideos.Where(pm => pm.MediaId == mediaId).ExecuteDeleteAsync(cancellationToken);
+        return deleted;
+    }
 
     public async Task AddAsync(Project project, CancellationToken cancellationToken = default) =>
         await db.Projects.AddAsync(project, cancellationToken);
@@ -80,8 +86,6 @@ internal sealed class ProjectRepository(ProjectsDbContext db) : IProjectReposito
         await db.ProjectUsers.AddAsync(projectUser, cancellationToken);
 
     public void RemoveProjectUser(ProjectUser projectUser) => db.ProjectUsers.Remove(projectUser);
-
-    public void RemoveProjectMedia(ProjectMedia projectMedia) => db.ProjectMedias.Remove(projectMedia);
 
     public void Remove(Project project) => db.Projects.Remove(project);
 

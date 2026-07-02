@@ -1,6 +1,5 @@
 using Kuvox.Api.Modules.Media.Contracts;
 using Kuvox.Api.Modules.Media.Repositories;
-using Kuvox.Api.Modules.Projects.Contracts;
 using Kuvox.Api.Modules.Projects.Repositories;
 using MediatR;
 
@@ -9,7 +8,7 @@ namespace Kuvox.Api.Modules.Shared.Infrastructure;
 /// <summary>
 /// Background job that empties Trash: every <see cref="Interval"/> it hard-deletes any
 /// <c>Project</c>/<c>Media</c> soft-deleted more than <see cref="Retention"/> ago and publishes
-/// the matching delete events so dependent modules clean up (Rule 4).
+/// media delete events so dependent modules clean up media associations (Rule 4).
 ///
 /// Lives in Shared because it spans modules; it resolves each module's (internal) repository in
 /// a fresh DI scope per run — the modular-monolith equivalent of one maintenance worker calling
@@ -74,11 +73,6 @@ public sealed class TrashPurgeService(IServiceProvider services, ILogger<TrashPu
             }
 
             await projects.SaveChangesAsync(cancellationToken);
-
-            foreach (var project in staleProjects)
-            {
-                await mediator.Publish(new ProjectDeletedEvent(project.Id), cancellationToken);
-            }
 
             logger.LogInformation(
                 "[TrashPurge] purged {Count} project(s) older than {Days}d.",

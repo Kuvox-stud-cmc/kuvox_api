@@ -60,7 +60,7 @@ The API will be available at `https://localhost:5001` (or `http://localhost:5000
 | Module      | Tables (schema)                                                       | Responsibility                                                          |
 | ----------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | `Auth`      | `auth.users`, `auth.studios`, `auth.user_studios`, `auth.studio_invitations`, `auth.audit_log_entries` | User registration, login, JWT issuance, refresh, Studio access, invitations, settings, audit |
-| `Projects`  | `projects.projects`                                                   | CRUD for projects                                                       |
+| `Projects`  | `projects.projects`, `projects.project_images`, `projects.project_audios`, `projects.project_videos` | CRUD for projects and project/media associations                        |
 | `Media`     | `media.*`                                                             | Media library metadata, albums, sharing, Studio-scoped media records    |
 | `Notifications` | `notifications.notifications`                                    | In-app notifications, unread counts, read/archive/delete lifecycle      |
 | `Timelines` | `timelines.{timelines,timeline_revisions,render_jobs,command_history}`| Timeline state, revisions (JSONB ops), render jobs, NL command history  |
@@ -79,7 +79,7 @@ are enforced (by convention within the single assembly — see the caveat below)
    are stored as bare `Guid` ids — no cross-schema FKs, no cross-module EF navigations.
 4. **Cross-module events via MediatR** — events are `INotification` records in the
    publisher's `Contracts/`; subscribers implement `INotificationHandler<>` internally
-   (e.g. `ProjectDeletedEvent` → Timelines & Videos cleanup handlers).
+   (e.g. `MediaDeletedEvent` -> Projects association cleanup handlers).
 
 ### Implementation status
 
@@ -88,6 +88,19 @@ by service/repository code. Studio access uses fixed roles (`Owner`, `Admin`, `M
 `Viewer`), email invitations, settings, audit-log APIs, and notification events.
 In `Development`, module DbContexts auto-migrate on startup, so `docker compose up` +
 `dotnet watch run` applies pending EF migrations without manual `dotnet ef` steps.
+
+Media uploads are library-scoped, not project-bound. The API stores raw uploads in
+SeaweedFS under `media/{mediaId}/raw/original{ext}`, saves the media row as `Uploaded`,
+and publishes `media.optimization.requested` without a `projectId`. Project/media
+membership is owned by the Projects module through the TPC `ProjectMedia` hierarchy:
+`projects.project_images`, `projects.project_audios`, and `projects.project_videos`.
+
+The API also consumes `media.optimization.completed` and `media.optimization.failed`
+from RabbitMQ queues `api.media.optimization.completed` and
+`api.media.optimization.failed`. Completion stores canonical/proxy/thumbnail object
+keys and bucket names, marks media `Ready`, then deletes raw storage only after the DB
+update succeeds. Failure marks media `Failed` and keeps the raw object for inspection or
+later cleanup.
 
 > **Single-assembly caveat:** because every module lives in one `api.csproj`, `internal`
 > and the `Contracts`-only boundary are conventions, not compiler-enforced isolation. To
@@ -121,3 +134,4 @@ docker run -p 5000:5000 kuvox-api
 - **[kuvox-frontend](../frontend)** — React web frontend
 - **[kuvox-ai](../ai-service)** — Python AI / media service
 - **[kuvox-mobile](../mobile)** — React Native (Expo) mobile client
+

@@ -49,8 +49,8 @@ public static class MediaModule
         services.AddScoped<IMediaService, MediaService>();
         services.AddScoped<IAlbumService, AlbumService>();
         services.AddScoped<IMediaApi, MediaApi>();
+        services.AddHostedService<MediaOptimizationResultConsumer>();
 
-        // INotificationHandler<ProjectDeletedEvent> is discovered by the MediatR assembly scan.
         return services;
     }
 }

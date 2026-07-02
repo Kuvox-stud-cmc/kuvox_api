@@ -3,6 +3,7 @@ using System;
 using Kuvox.Api.Modules.Projects.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Kuvox.Api.Modules.Projects.Repositories.Migrations
 {
     [DbContext(typeof(ProjectsDbContext))]
-    partial class ProjectsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260702061653_SplitProjectMediaByKind")]
+    partial class SplitProjectMediaByKind
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -178,8 +181,6 @@ namespace Kuvox.Api.Modules.Projects.Repositories.Migrations
                 {
                     b.HasBaseType("Kuvox.Api.Modules.Projects.Models.ProjectMedia");
 
-                    b.HasIndex("MediaId");
-
                     b.ToTable("project_audios", "projects");
                 });
 
@@ -187,16 +188,12 @@ namespace Kuvox.Api.Modules.Projects.Repositories.Migrations
                 {
                     b.HasBaseType("Kuvox.Api.Modules.Projects.Models.ProjectMedia");
 
-                    b.HasIndex("MediaId");
-
                     b.ToTable("project_images", "projects");
                 });
 
             modelBuilder.Entity("Kuvox.Api.Modules.Projects.Models.ProjectVideo", b =>
                 {
                     b.HasBaseType("Kuvox.Api.Modules.Projects.Models.ProjectMedia");
-
-                    b.HasIndex("MediaId");
 
                     b.ToTable("project_videos", "projects");
                 });

@@ -39,6 +39,7 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
             entity.Property(m => m.OwnerKind).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(m => m.Filename).HasMaxLength(512).IsRequired();
             entity.Property(m => m.StorageKey).HasMaxLength(1024).IsRequired();
+            ConfigureOptimizedStorage(entity);
             entity.Property(m => m.Codec).HasMaxLength(64);
             entity.Property(m => m.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(m => m.ErrorMessage).HasMaxLength(1024);
@@ -59,6 +60,7 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
             entity.Property(a => a.OwnerKind).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(a => a.Filename).HasMaxLength(512).IsRequired();
             entity.Property(a => a.StorageKey).HasMaxLength(1024).IsRequired();
+            ConfigureOptimizedStorage(entity);
             entity.Property(a => a.Codec).HasMaxLength(64);
             entity.Property(a => a.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(a => a.ErrorMessage).HasMaxLength(1024);
@@ -76,6 +78,7 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
             entity.Property(p => p.OwnerKind).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(p => p.Filename).HasMaxLength(512).IsRequired();
             entity.Property(p => p.StorageKey).HasMaxLength(1024).IsRequired();
+            ConfigureOptimizedStorage(entity);
             entity.Property(p => p.Codec).HasMaxLength(64);
             entity.Property(p => p.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(p => p.ErrorMessage).HasMaxLength(1024);
@@ -196,5 +199,18 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
         });
 
         base.OnModelCreating(modelBuilder);
+    }
+
+    private static void ConfigureOptimizedStorage<TEntity>(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<TEntity> entity)
+        where TEntity : Models.Media
+    {
+        entity.Property(m => m.RawBucketName).HasMaxLength(256);
+        entity.Property(m => m.RawStorageKey).HasMaxLength(1024);
+        entity.Property(m => m.CanonicalBucketName).HasMaxLength(256);
+        entity.Property(m => m.CanonicalStorageKey).HasMaxLength(1024);
+        entity.Property(m => m.ProxyBucketName).HasMaxLength(256);
+        entity.Property(m => m.ProxyStorageKey).HasMaxLength(1024);
+        entity.Property(m => m.ThumbnailBucketName).HasMaxLength(256);
+        entity.Property(m => m.ThumbnailStorageKey).HasMaxLength(1024);
     }
 }

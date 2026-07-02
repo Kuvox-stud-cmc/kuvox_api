@@ -7,7 +7,6 @@ public sealed record MediaOptimizationRequestedEvent(
   string EventType,
   DateTimeOffset OccurredAt,
   Guid MediaId,
-  Guid ProjectId,
   Guid UserId,
   string BucketName,
   string ObjectKey,

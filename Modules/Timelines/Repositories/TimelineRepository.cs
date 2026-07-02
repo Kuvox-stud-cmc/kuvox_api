@@ -17,9 +17,6 @@ internal sealed class TimelineRepository(TimelinesDbContext db) : ITimelineRepos
     public async Task AddAsync(Timeline timeline, CancellationToken cancellationToken = default) =>
         await db.Timelines.AddAsync(timeline, cancellationToken);
 
-    public Task<int> DeleteByProjectAsync(Guid projectId, CancellationToken cancellationToken = default) =>
-        db.Timelines.Where(t => t.ProjectId == projectId).ExecuteDeleteAsync(cancellationToken);
-
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);
 }

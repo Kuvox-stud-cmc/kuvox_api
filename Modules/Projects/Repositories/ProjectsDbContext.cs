@@ -17,9 +17,17 @@ public sealed class ProjectsDbContext(DbContextOptions<ProjectsDbContext> option
 
     public DbSet<ProjectMedia> ProjectMedias => Set<ProjectMedia>();
 
+    public DbSet<ProjectImage> ProjectImages => Set<ProjectImage>();
+
+    public DbSet<ProjectAudio> ProjectAudios => Set<ProjectAudio>();
+
+    public DbSet<ProjectVideo> ProjectVideos => Set<ProjectVideo>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema(Schema);
+
+        modelBuilder.Entity<ProjectMedia>().UseTpcMappingStrategy().HasKey(pm => new { pm.ProjectId, pm.MediaId });
 
         modelBuilder.Entity<Project>(entity =>
         {
@@ -63,10 +71,31 @@ public sealed class ProjectsDbContext(DbContextOptions<ProjectsDbContext> option
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
-        modelBuilder.Entity<ProjectMedia>(entity =>
+        modelBuilder.Entity<ProjectImage>(entity =>
         {
-            entity.ToTable("project_medias");
-            entity.HasKey(pm => new { pm.ProjectId, pm.MediaId });
+            entity.ToTable("project_images");
+            entity.HasIndex(pm => pm.MediaId);
+
+            entity.HasOne<Project>()
+                .WithMany()
+                .HasForeignKey(pm => pm.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ProjectAudio>(entity =>
+        {
+            entity.ToTable("project_audios");
+            entity.HasIndex(pm => pm.MediaId);
+
+            entity.HasOne<Project>()
+                .WithMany()
+                .HasForeignKey(pm => pm.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ProjectVideo>(entity =>
+        {
+            entity.ToTable("project_videos");
             entity.HasIndex(pm => pm.MediaId);
 
             entity.HasOne<Project>()

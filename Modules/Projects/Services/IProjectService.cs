@@ -34,6 +34,6 @@ public interface IProjectService
 
     Task RestoreAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default);
 
-    /// <summary>Hard-deletes a trashed project and fires <c>ProjectDeletedEvent</c> for cleanup.</summary>
+    /// <summary>Hard-deletes a trashed project.</summary>
     Task PermanentDeleteAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default);
 }

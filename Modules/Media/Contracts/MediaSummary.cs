@@ -8,7 +8,6 @@ public sealed record MediaSummary(
     Guid OwnerId,
     OwnerKind OwnerKind,
     MediaKind Kind,
-    Guid? ProjectId,
     string Filename,
     string Status
 );

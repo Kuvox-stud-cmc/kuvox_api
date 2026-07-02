@@ -7,10 +7,6 @@ internal interface IMediaRepository
 {
     Task<Models.Media?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<Models.Media>> ListByProjectAsync(Guid projectId, CancellationToken cancellationToken = default);
-
-    Task<int> CountByProjectAsync(Guid projectId, CancellationToken cancellationToken = default);
-
     /// <summary>Live (non-deleted) media owned by a workspace, newest-updated first, paged.</summary>
     Task<(IReadOnlyList<Models.Media> Items, int Total)> ListByWorkspaceAsync(
         OwnerKind ownerKind, Guid ownerId, int page, int pageSize, CancellationToken cancellationToken = default);
@@ -35,9 +31,6 @@ internal interface IMediaRepository
     void RemoveMediaUser(MediaUser mediaUser);
 
     void Remove(Models.Media media);
-
-    /// <summary>Deletes every media item belonging to a project (used on project deletion cleanup).</summary>
-    Task<int> DeleteByProjectAsync(Guid projectId, CancellationToken cancellationToken = default);
 
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }

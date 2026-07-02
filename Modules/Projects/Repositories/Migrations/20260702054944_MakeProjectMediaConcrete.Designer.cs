@@ -3,6 +3,7 @@ using System;
 using Kuvox.Api.Modules.Projects.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Kuvox.Api.Modules.Projects.Repositories.Migrations
 {
     [DbContext(typeof(ProjectsDbContext))]
-    partial class ProjectsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260702054944_MakeProjectMediaConcrete")]
+    partial class MakeProjectMediaConcrete
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -133,9 +136,9 @@ namespace Kuvox.Api.Modules.Projects.Repositories.Migrations
 
                     b.HasKey("ProjectId", "MediaId");
 
-                    b.ToTable((string)null);
+                    b.HasIndex("MediaId");
 
-                    b.UseTpcMappingStrategy();
+                    b.ToTable("project_medias", "projects");
                 });
 
             modelBuilder.Entity("Kuvox.Api.Modules.Projects.Models.ProjectUser", b =>
@@ -174,61 +177,16 @@ namespace Kuvox.Api.Modules.Projects.Repositories.Migrations
                     b.ToTable("project_users", "projects");
                 });
 
-            modelBuilder.Entity("Kuvox.Api.Modules.Projects.Models.ProjectAudio", b =>
+            modelBuilder.Entity("Kuvox.Api.Modules.Projects.Models.ProjectMedia", b =>
                 {
-                    b.HasBaseType("Kuvox.Api.Modules.Projects.Models.ProjectMedia");
-
-                    b.HasIndex("MediaId");
-
-                    b.ToTable("project_audios", "projects");
-                });
-
-            modelBuilder.Entity("Kuvox.Api.Modules.Projects.Models.ProjectImage", b =>
-                {
-                    b.HasBaseType("Kuvox.Api.Modules.Projects.Models.ProjectMedia");
-
-                    b.HasIndex("MediaId");
-
-                    b.ToTable("project_images", "projects");
-                });
-
-            modelBuilder.Entity("Kuvox.Api.Modules.Projects.Models.ProjectVideo", b =>
-                {
-                    b.HasBaseType("Kuvox.Api.Modules.Projects.Models.ProjectMedia");
-
-                    b.HasIndex("MediaId");
-
-                    b.ToTable("project_videos", "projects");
+                    b.HasOne("Kuvox.Api.Modules.Projects.Models.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Kuvox.Api.Modules.Projects.Models.ProjectUser", b =>
-                {
-                    b.HasOne("Kuvox.Api.Modules.Projects.Models.Project", null)
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Kuvox.Api.Modules.Projects.Models.ProjectAudio", b =>
-                {
-                    b.HasOne("Kuvox.Api.Modules.Projects.Models.Project", null)
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Kuvox.Api.Modules.Projects.Models.ProjectImage", b =>
-                {
-                    b.HasOne("Kuvox.Api.Modules.Projects.Models.Project", null)
-                        .WithMany()
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Kuvox.Api.Modules.Projects.Models.ProjectVideo", b =>
                 {
                     b.HasOne("Kuvox.Api.Modules.Projects.Models.Project", null)
                         .WithMany()

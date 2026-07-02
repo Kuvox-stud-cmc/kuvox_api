@@ -1,4 +1,5 @@
 using Kuvox.Api.Modules.Media.Dtos;
+using Kuvox.Api.Modules.Media.Contracts;
 using Kuvox.Api.Modules.Shared.Dtos;
 using Kuvox.Api.Modules.Shared.Infrastructure;
 
@@ -15,6 +16,10 @@ public interface IMediaService
     Task<MediaDto> GetAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default);
 
     Task<MediaDto> UploadRawAsync(WorkspaceScope scope, CallerContext caller, UploadMediaRequest request, CancellationToken cancellationToken = default);
+
+    Task HandleOptimizationCompletedAsync(MediaOptimizationCompletedEvent completed, CancellationToken cancellationToken = default);
+
+    Task HandleOptimizationFailedAsync(MediaOptimizationFailedEvent failed, CancellationToken cancellationToken = default);
 
     Task ShareAsync(Guid id, CallerContext caller, ShareMediaRequest request, CancellationToken cancellationToken = default);
 

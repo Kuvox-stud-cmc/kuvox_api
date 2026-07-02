@@ -4,7 +4,6 @@ using Kuvox.Api.Modules.Media.Dtos;
 using Kuvox.Api.Modules.Media.Enums;
 using Kuvox.Api.Modules.Media.Models;
 using Kuvox.Api.Modules.Media.Repositories;
-using Kuvox.Api.Modules.Projects.Contracts;
 using Kuvox.Api.Modules.Shared.Dtos;
 using Kuvox.Api.Modules.Shared.Infrastructure;
 using Kuvox.Api.Modules.Shared.Infrastructure.RabbitMQ;
@@ -21,10 +20,10 @@ namespace Kuvox.Api.Modules.Media.Services;
 internal sealed class MediaService(
     IMediaRepository media, 
     IAuthApi auth, 
-    IProjectsApi projects,
     IMediator mediator,
     IFileStorageService storage,
-    IRabbitMqPublisher publisher)
+    IRabbitMqPublisher publisher,
+    ILogger<MediaService> logger)
     : IMediaService
 {
     /// <summary>Trash auto-purge window (kept in sync with <c>TrashPurgeService</c>).</summary>
@@ -88,11 +87,6 @@ internal sealed class MediaService(
 
         ValidateKindMatchesFile(request.Kind, request.File);
 
-        if (request.ProjectId == Guid.Empty || !await projects.ProjectExistsAsync(request.ProjectId, cancellationToken))
-        {
-            throw DomainException.BadRequest("Unknown project.");
-        }
-
         var mediaId = Guid.NewGuid();
 
         StoredMediaObject? storedObject = null;
@@ -101,7 +95,6 @@ internal sealed class MediaService(
         {
             storedObject = await storage.UploadRawAsync(
                 request.File,
-                request.ProjectId,
                 mediaId,
                 cancellationToken
             );
@@ -117,9 +110,11 @@ internal sealed class MediaService(
                     FrameRate = 0,
                     OwnerId = scope.OwnerId,
                     OwnerKind = OwnerKindOf(scope),
-                    ProjectId = request.ProjectId,
                     Filename = Path.GetFileName(request.File.FileName).Trim(),
                     StorageKey = storedObject.ObjectKey,
+                    RawBucketName = storedObject.BucketName,
+                    RawStorageKey = storedObject.ObjectKey,
+                    RawSizeBytes = storedObject.SizeBytes,
                     SizeBytes = storedObject.SizeBytes,
                     Status = MediaStatus.Uploaded
                 },
@@ -129,9 +124,11 @@ internal sealed class MediaService(
                     DurationSeconds = 0,
                     OwnerId = scope.OwnerId,
                     OwnerKind = OwnerKindOf(scope),
-                    ProjectId = request.ProjectId,
                     Filename = Path.GetFileName(request.File.FileName).Trim(),
                     StorageKey = storedObject.ObjectKey,
+                    RawBucketName = storedObject.BucketName,
+                    RawStorageKey = storedObject.ObjectKey,
+                    RawSizeBytes = storedObject.SizeBytes,
                     SizeBytes = storedObject.SizeBytes,
                     Status = MediaStatus.Uploaded
                 },
@@ -142,9 +139,11 @@ internal sealed class MediaService(
                     Height = 0,
                     OwnerId = scope.OwnerId,
                     OwnerKind = OwnerKindOf(scope),
-                    ProjectId = request.ProjectId,
                     Filename = Path.GetFileName(request.File.FileName).Trim(),
                     StorageKey = storedObject.ObjectKey,
+                    RawBucketName = storedObject.BucketName,
+                    RawStorageKey = storedObject.ObjectKey,
+                    RawSizeBytes = storedObject.SizeBytes,
                     SizeBytes = storedObject.SizeBytes,
                     Status = MediaStatus.Uploaded
                 },
@@ -159,7 +158,6 @@ internal sealed class MediaService(
                 EventType: "media.optimization.requested",
                 OccurredAt: DateTimeOffset.UtcNow,
                 MediaId: item.Id,
-                ProjectId: request.ProjectId,
                 UserId: caller.UserId,
                 BucketName: storedObject.BucketName,
                 ObjectKey: storedObject.ObjectKey,
@@ -189,6 +187,106 @@ internal sealed class MediaService(
             }
             throw;
         }
+    }
+
+    public async Task HandleOptimizationCompletedAsync(
+        MediaOptimizationCompletedEvent completed,
+        CancellationToken cancellationToken = default)
+    {
+        var item = await media.GetByIdAsync(completed.MediaId, cancellationToken);
+        if (item is null)
+        {
+            return;
+        }
+
+        if (item.Status == MediaStatus.Ready
+            && item.CanonicalStorageKey == completed.Canonical?.ObjectKey)
+        {
+            return;
+        }
+
+        if (completed.Canonical is not { } canonical)
+        {
+            throw DomainException.BadRequest("Optimization completion missing canonical object.");
+        }
+
+        item.CanonicalBucketName = canonical.BucketName;
+        item.CanonicalStorageKey = canonical.ObjectKey;
+        item.CanonicalSizeBytes = canonical.SizeBytes;
+
+        item.ProxyBucketName = completed.Proxy?.BucketName;
+        item.ProxyStorageKey = completed.Proxy?.ObjectKey;
+        item.ProxySizeBytes = completed.Proxy?.SizeBytes;
+
+        item.ThumbnailBucketName = completed.Thumbnail?.BucketName;
+        item.ThumbnailStorageKey = completed.Thumbnail?.ObjectKey;
+        item.ThumbnailSizeBytes = completed.Thumbnail?.SizeBytes;
+
+        item.StorageKey = canonical.ObjectKey;
+        item.SizeBytes = canonical.SizeBytes;
+        item.Status = MediaStatus.Ready;
+        item.ErrorMessage = null;
+        item.Codec = completed.Codec;
+        item.UpdatedAt = DateTimeOffset.UtcNow;
+
+        if (item.RawBucketName is null)
+        {
+            item.RawBucketName = completed.RawBucketName;
+        }
+
+        if (item.RawStorageKey is null)
+        {
+            item.RawStorageKey = completed.RawObjectKey;
+        }
+
+        item.RawSizeBytes = completed.RawSizeBytes;
+
+        ApplyOptimizationMetadata(item, completed);
+
+        await media.SaveChangesAsync(cancellationToken);
+
+        if (item.RawBucketName is not { Length: > 0 } rawBucket
+            || item.RawStorageKey is not { Length: > 0 } rawKey)
+        {
+            return;
+        }
+
+        try
+        {
+            await storage.DeleteAsync(rawBucket, rawKey, cancellationToken);
+            item.RawBucketName = null;
+            item.RawStorageKey = null;
+            item.RawSizeBytes = null;
+            item.UpdatedAt = DateTimeOffset.UtcNow;
+            await media.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                ex,
+                "[Media] Failed to delete raw object {BucketName}/{ObjectKey} after optimizing media {MediaId}.",
+                rawBucket,
+                rawKey,
+                item.Id);
+        }
+    }
+
+    public async Task HandleOptimizationFailedAsync(
+        MediaOptimizationFailedEvent failed,
+        CancellationToken cancellationToken = default)
+    {
+        var item = await media.GetByIdAsync(failed.MediaId, cancellationToken);
+        if (item is null)
+        {
+            return;
+        }
+
+        item.Status = MediaStatus.Failed;
+        item.ErrorMessage = string.IsNullOrWhiteSpace(failed.ErrorMessage)
+            ? failed.ErrorCode
+            : failed.ErrorMessage;
+        item.UpdatedAt = DateTimeOffset.UtcNow;
+        await media.SaveChangesAsync(cancellationToken);
     }
 
     public async Task ShareAsync(
@@ -269,7 +367,22 @@ internal sealed class MediaService(
         media.Remove(item);
         await media.SaveChangesAsync(cancellationToken);
 
-        await storage.DeleteAsync("kuvox-raw", item.StorageKey, cancellationToken);
+        foreach (var storedObject in StoredObjectsFor(item))
+        {
+            try
+            {
+                await storage.DeleteAsync(storedObject.BucketName, storedObject.ObjectKey, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(
+                    ex,
+                    "[Media] Failed to delete object {BucketName}/{ObjectKey} for media {MediaId}.",
+                    storedObject.BucketName,
+                    storedObject.ObjectKey,
+                    item.Id);
+            }
+        }
 
         await mediator.Publish(new MediaDeletedEvent(item.Id), cancellationToken);
     }
@@ -289,6 +402,55 @@ internal sealed class MediaService(
         if (!valid)
         {
             throw DomainException.BadRequest($"File content type '{file.ContentType}' does not match media kind '{kind}'.");
+        }
+    }
+
+    private static void ApplyOptimizationMetadata(
+        Models.Media item,
+        MediaOptimizationCompletedEvent completed)
+    {
+        switch (item)
+        {
+            case Video video:
+                video.DurationSeconds = completed.DurationSeconds ?? video.DurationSeconds;
+                video.Width = completed.Width ?? video.Width;
+                video.Height = completed.Height ?? video.Height;
+                video.FrameRate = completed.FrameRate ?? video.FrameRate;
+                break;
+            case Audio audio:
+                audio.DurationSeconds = completed.DurationSeconds ?? audio.DurationSeconds;
+                break;
+            case Photo photo:
+                photo.Width = completed.Width ?? photo.Width;
+                photo.Height = completed.Height ?? photo.Height;
+                break;
+        }
+    }
+
+    private static IEnumerable<(string BucketName, string ObjectKey)> StoredObjectsFor(Models.Media item)
+    {
+        if (item.RawBucketName is { Length: > 0 } rawBucket
+            && item.RawStorageKey is { Length: > 0 } rawKey)
+        {
+            yield return (rawBucket, rawKey);
+        }
+
+        if (item.CanonicalBucketName is { Length: > 0 } canonicalBucket
+            && item.CanonicalStorageKey is { Length: > 0 } canonicalKey)
+        {
+            yield return (canonicalBucket, canonicalKey);
+        }
+
+        if (item.ProxyBucketName is { Length: > 0 } proxyBucket
+            && item.ProxyStorageKey is { Length: > 0 } proxyKey)
+        {
+            yield return (proxyBucket, proxyKey);
+        }
+
+        if (item.ThumbnailBucketName is { Length: > 0 } thumbnailBucket
+            && item.ThumbnailStorageKey is { Length: > 0 } thumbnailKey)
+        {
+            yield return (thumbnailBucket, thumbnailKey);
         }
     }
 
@@ -353,8 +515,25 @@ internal sealed class MediaService(
         int? height = m switch { Video v => v.Height, Photo p => p.Height, _ => null };
         double? frameRate = m switch { Video v => v.FrameRate, _ => null };
         
-        return new(m.Id, m.OwnerId, m.OwnerKind, m.Kind, m.Filename, m.StorageKey, m.SizeBytes,
-            m.Status.ToString(), duration, width, height, m.Codec, frameRate, m.CreatedAt);
+        return new(
+            m.Id,
+            m.OwnerId,
+            m.OwnerKind,
+            m.Kind,
+            m.Filename,
+            m.StorageKey,
+            m.SizeBytes,
+            m.Status.ToString(),
+            m.CanonicalStorageKey,
+            m.ProxyStorageKey,
+            m.ThumbnailStorageKey,
+            m.ErrorMessage,
+            duration,
+            width,
+            height,
+            m.Codec,
+            frameRate,
+            m.CreatedAt);
     }
 
     private static MediaTrashItemDto ToTrashDto(Models.Media m)

@@ -11,6 +11,10 @@ public sealed record MediaDto(
     string StorageKey,
     long SizeBytes,
     string Status,
+    string? CanonicalStorageKey,
+    string? ProxyStorageKey,
+    string? ThumbnailStorageKey,
+    string? ErrorMessage,
     double? DurationSeconds,
     int? Width,
     int? Height,
@@ -21,8 +25,7 @@ public sealed record MediaDto(
 
 public sealed record UploadMediaRequest(
     IFormFile File,
-    MediaKind Kind,
-    Guid ProjectId
+    MediaKind Kind
 );
 
 /// <summary>Grants another user (looked up by email) access to a media item.</summary>

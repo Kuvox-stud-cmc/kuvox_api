@@ -12,8 +12,5 @@ internal interface ITimelineRepository
 
     Task AddAsync(Timeline timeline, CancellationToken cancellationToken = default);
 
-    /// <summary>Removes all timelines for a project (used on project-deletion cleanup).</summary>
-    Task<int> DeleteByProjectAsync(Guid projectId, CancellationToken cancellationToken = default);
-
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }

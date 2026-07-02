@@ -8,11 +8,6 @@ internal sealed class MediaDeletedHandler(IProjectRepository projects) : INotifi
 {
   public async Task Handle(MediaDeletedEvent notification, CancellationToken cancellationToken)
   {
-    var projectMedia = await projects.GetProjectMediaByMediaIdAsync(notification.MediaId, cancellationToken);
-    if (projectMedia is not null)
-    {
-      projects.RemoveProjectMedia(projectMedia);
-      await projects.SaveChangesAsync(cancellationToken);
-    }
+    await projects.DeleteProjectMediaByMediaIdAsync(notification.MediaId, cancellationToken);
   }
 }

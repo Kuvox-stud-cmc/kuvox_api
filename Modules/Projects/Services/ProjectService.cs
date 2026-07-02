@@ -1,12 +1,10 @@
 using Kuvox.Api.Modules.Auth.Contracts;
-using Kuvox.Api.Modules.Projects.Contracts;
 using Kuvox.Api.Modules.Projects.Dtos;
 using Kuvox.Api.Modules.Projects.Enums;
 using Kuvox.Api.Modules.Projects.Models;
 using Kuvox.Api.Modules.Projects.Repositories;
 using Kuvox.Api.Modules.Shared.Dtos;
 using Kuvox.Api.Modules.Shared.Infrastructure;
-using MediatR;
 
 namespace Kuvox.Api.Modules.Projects.Services;
 
@@ -14,10 +12,9 @@ namespace Kuvox.Api.Modules.Projects.Services;
 /// Real Projects business logic: workspace-scoped listing, "shared with me", sharing,
 /// soft-delete → trash → restore → permanent delete. Persists via
 /// <see cref="IProjectRepository"/>, resolves invitees through the Auth public contract
-/// (<see cref="IAuthApi"/>, Rule 2), and publishes <see cref="ProjectDeletedEvent"/> on
-/// permanent delete so Timelines/Media clean up (Rule 4).
+/// (<see cref="IAuthApi"/>, Rule 2).
 /// </summary>
-internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth, IMediator mediator)
+internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
     : IProjectService
 {
     /// <summary>Trash auto-purge window (kept in sync with <c>TrashPurgeService</c>).</summary>
@@ -175,9 +172,6 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
 
         projects.Remove(project);
         await projects.SaveChangesAsync(cancellationToken);
-
-        // Cascade cleanup to Timelines/Media (Rule 4).
-        await mediator.Publish(new ProjectDeletedEvent(project.Id), cancellationToken);
     }
 
     private async Task<Project> LoadLiveAsync(Guid id, CancellationToken cancellationToken)
