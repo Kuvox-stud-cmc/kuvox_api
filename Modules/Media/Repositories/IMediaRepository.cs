@@ -1,5 +1,6 @@
 using Kuvox.Api.Modules.Media.Enums;
 using Kuvox.Api.Modules.Media.Models;
+using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
 
 namespace Kuvox.Api.Modules.Media.Repositories;
 
@@ -27,6 +28,8 @@ internal interface IMediaRepository
     Task AddAsync(Models.Media media, CancellationToken cancellationToken = default);
 
     Task AddMediaUserAsync(MediaUser mediaUser, CancellationToken cancellationToken = default);
+
+    Task EnqueueOutboxAsync(OutboxMessage message, CancellationToken cancellationToken = default);
 
     void RemoveMediaUser(MediaUser mediaUser);
 

@@ -1,6 +1,7 @@
 using Kuvox.Api.Modules.Media.Contracts;
 using Kuvox.Api.Modules.Media.Repositories;
 using Kuvox.Api.Modules.Media.Services;
+using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Amazon.Runtime;
 using Amazon.S3;
@@ -51,6 +52,7 @@ public static class MediaModule
         services.AddScoped<IMediaApi, MediaApi>();
         services.AddHostedService<MediaOptimizationResultConsumer>();
         services.AddHostedService<IngestionResultConsumer>();
+        services.AddHostedService<OutboxDispatcher>();
 
         return services;
     }

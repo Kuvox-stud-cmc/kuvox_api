@@ -6,8 +6,10 @@ using Kuvox.Api.Modules.Media.Models;
 using Kuvox.Api.Modules.Media.Repositories;
 using Kuvox.Api.Modules.Shared.Dtos;
 using Kuvox.Api.Modules.Shared.Infrastructure;
+using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
 using Kuvox.Api.Modules.Shared.Infrastructure.RabbitMQ;
 using MediatR;
+using Microsoft.Extensions.Options;
 
 namespace Kuvox.Api.Modules.Media.Services;
 
@@ -22,7 +24,7 @@ internal sealed class MediaService(
     IAuthApi auth, 
     IMediator mediator,
     IFileStorageService storage,
-    IRabbitMqPublisher publisher,
+    IOptions<RabbitMqOptions> rabbitMqOptions,
     ILogger<MediaService> logger)
     : IMediaService
 {
@@ -150,9 +152,6 @@ internal sealed class MediaService(
                 _ => throw DomainException.BadRequest("Unsupported media kind.")
             };
 
-            await media.AddAsync(item, cancellationToken);
-            await media.SaveChangesAsync(cancellationToken);
-
             var optimizationEvent = new MediaOptimizationRequestedEvent(
                 EventId: Guid.NewGuid(),
                 EventType: "media.optimization.requested",
@@ -167,11 +166,16 @@ internal sealed class MediaService(
                 Kind: item.Kind
             );
 
-            await publisher.PublishAsync(
-                routingKey: "media.optimization.requested",
-                message: optimizationEvent,
-                cancellationToken
-            );
+            await media.AddAsync(item, cancellationToken);
+            await media.EnqueueOutboxAsync(
+                OutboxMessage.Create(
+                    dedupeKey: $"media.optimization.requested:{item.Id}",
+                    exchange: rabbitMqOptions.Value.ExchangeName,
+                    routingKey: "media.optimization.requested",
+                    eventType: optimizationEvent.EventType,
+                    payload: optimizationEvent),
+                cancellationToken);
+            await media.SaveChangesAsync(cancellationToken);
 
             return ToDto(item);
         }
@@ -243,8 +247,6 @@ internal sealed class MediaService(
 
         ApplyOptimizationMetadata(item, completed);
 
-        await media.SaveChangesAsync(cancellationToken);
-
         if (item.RawBucketName is { Length: > 0 } rawBucket
             && item.RawStorageKey is { Length: > 0 } rawKey)
         {
@@ -255,7 +257,6 @@ internal sealed class MediaService(
                 item.RawStorageKey = null;
                 item.RawSizeBytes = null;
                 item.UpdatedAt = DateTimeOffset.UtcNow;
-                await media.SaveChangesAsync(cancellationToken);
             }
             catch (Exception ex)
             {
@@ -286,11 +287,15 @@ internal sealed class MediaService(
             Codec: completed.Codec
         );
 
-        await publisher.PublishAsync(
-            routingKey: "ingestion.requested",
-            message: ingestionEvent,
-            cancellationToken: cancellationToken
-        );
+        await media.EnqueueOutboxAsync(
+            OutboxMessage.Create(
+                dedupeKey: $"ingestion.requested:{completed.EventId}",
+                exchange: rabbitMqOptions.Value.ExchangeName,
+                routingKey: "ingestion.requested",
+                eventType: ingestionEvent.EventType,
+                payload: ingestionEvent),
+            cancellationToken);
+        await media.SaveChangesAsync(cancellationToken);
     }
 
     public async Task HandleOptimizationFailedAsync(

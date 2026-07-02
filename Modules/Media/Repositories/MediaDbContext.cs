@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
 
 namespace Kuvox.Api.Modules.Media.Repositories;
 
@@ -9,6 +10,7 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
 
     public DbSet<Models.Media> Media => Set<Models.Media>();
     public DbSet<Models.MediaUser> MediaUsers => Set<Models.MediaUser>();
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     public DbSet<Models.Video> Videos => Set<Models.Video>();
     public DbSet<Models.Audio> Audios => Set<Models.Audio>();
@@ -32,6 +34,7 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
         modelBuilder.Entity<Models.Media>().UseTpcMappingStrategy().HasKey(m => m.Id);
         modelBuilder.Entity<Models.MediaUser>().UseTpcMappingStrategy().HasKey(mu => new { mu.MediaId, mu.UserId });
         modelBuilder.Entity<Models.AlbumMedia>().UseTpcMappingStrategy().HasKey(am => new { am.AlbumId, am.MediaId });
+        ConfigureOutbox(modelBuilder);
 
         modelBuilder.Entity<Models.Video>(entity =>
         {
@@ -212,5 +215,25 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
         entity.Property(m => m.ProxyStorageKey).HasMaxLength(1024);
         entity.Property(m => m.ThumbnailBucketName).HasMaxLength(256);
         entity.Property(m => m.ThumbnailStorageKey).HasMaxLength(1024);
+    }
+
+    private static void ConfigureOutbox(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<OutboxMessage>(entity =>
+        {
+            entity.ToTable("outbox_messages", "shared");
+            entity.HasKey(message => message.Id);
+            entity.Property(message => message.DedupeKey).HasMaxLength(256).IsRequired();
+            entity.Property(message => message.Transport).HasMaxLength(32).IsRequired();
+            entity.Property(message => message.Exchange).HasMaxLength(256).IsRequired();
+            entity.Property(message => message.RoutingKey).HasMaxLength(256).IsRequired();
+            entity.Property(message => message.EventType).HasMaxLength(256).IsRequired();
+            entity.Property(message => message.PayloadJson).HasColumnType("jsonb").IsRequired();
+            entity.Property(message => message.HeadersJson).HasColumnType("jsonb").IsRequired();
+            entity.Property(message => message.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+            entity.Property(message => message.LastError).HasMaxLength(2048);
+            entity.HasIndex(message => message.DedupeKey).IsUnique();
+            entity.HasIndex(message => new { message.Status, message.NextAttemptAt });
+        });
     }
 }

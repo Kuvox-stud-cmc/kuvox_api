@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Kuvox.Api.Modules.Media.Contracts;
 using Kuvox.Api.Modules.Shared.Infrastructure;
+using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
 using Kuvox.Api.Modules.Shared.Infrastructure.RabbitMQ;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
@@ -11,6 +12,8 @@ namespace Kuvox.Api.Modules.Media.Services;
 internal sealed class MediaOptimizationResultConsumer(
     IServiceScopeFactory scopeFactory,
     IOptions<RabbitMqOptions> options,
+    IOptions<MessagingOptions> messagingOptions,
+    RabbitMqRetryHelper retryHelper,
     ILogger<MediaOptimizationResultConsumer> logger)
     : BackgroundService, IAsyncDisposable
 {
@@ -25,6 +28,7 @@ internal sealed class MediaOptimizationResultConsumer(
     };
 
     private readonly RabbitMqOptions _options = options.Value;
+    private readonly MessagingOptions _messagingOptions = messagingOptions.Value;
     private IConnection? _connection;
     private IChannel? _channel;
 
@@ -80,7 +84,7 @@ internal sealed class MediaOptimizationResultConsumer(
 
         await _channel.BasicQosAsync(
             prefetchSize: 0,
-            prefetchCount: 4,
+            prefetchCount: (ushort)_messagingOptions.ConsumerPrefetch,
             global: false,
             cancellationToken: cancellationToken);
 
@@ -100,20 +104,11 @@ internal sealed class MediaOptimizationResultConsumer(
             throw new InvalidOperationException("RabbitMQ channel is not open.");
         }
 
-        await _channel.QueueDeclareAsync(
-            queue: queueName,
-            durable: true,
-            exclusive: false,
-            autoDelete: false,
-            arguments: null,
-            cancellationToken: cancellationToken);
-
-        await _channel.QueueBindAsync(
-            queue: queueName,
-            exchange: _options.ExchangeName,
-            routingKey: routingKey,
-            arguments: null,
-            cancellationToken: cancellationToken);
+        await retryHelper.DeclareRetryTopologyAsync(
+            _channel,
+            queueName,
+            routingKey,
+            cancellationToken);
     }
 
     private async Task ConsumeCompletedAsync(CancellationToken cancellationToken)
@@ -122,6 +117,7 @@ internal sealed class MediaOptimizationResultConsumer(
         consumer.ReceivedAsync += async (_, ea) =>
             await HandleAsync<MediaOptimizationCompletedEvent>(
                 ea,
+                CompletedQueueName,
                 CompletedRoutingKey,
                 (media, completed, ct) => media.HandleOptimizationCompletedAsync(completed, ct));
 
@@ -138,6 +134,7 @@ internal sealed class MediaOptimizationResultConsumer(
         consumer.ReceivedAsync += async (_, ea) =>
             await HandleAsync<MediaOptimizationFailedEvent>(
                 ea,
+                FailedQueueName,
                 FailedRoutingKey,
                 (media, failed, ct) => media.HandleOptimizationFailedAsync(failed, ct));
 
@@ -150,6 +147,7 @@ internal sealed class MediaOptimizationResultConsumer(
 
     private async Task HandleAsync<T>(
         BasicDeliverEventArgs ea,
+        string queueName,
         string expectedEventType,
         Func<IMediaService, T, CancellationToken, Task> handle)
         where T : class
@@ -164,7 +162,10 @@ internal sealed class MediaOptimizationResultConsumer(
             var message = JsonSerializer.Deserialize<T>(ea.Body.Span, JsonOptions);
             if (message is null || !IsValidMessage(message, expectedEventType))
             {
-                await _channel.BasicNackAsync(ea.DeliveryTag, multiple: false, requeue: false);
+                await SafeDlqOrRequeueAsync(
+                    ea,
+                    queueName,
+                    new InvalidOperationException("Invalid optimization result message."));
                 return;
             }
 
@@ -176,17 +177,61 @@ internal sealed class MediaOptimizationResultConsumer(
         catch (JsonException ex)
         {
             logger.LogWarning(ex, "[Media] Invalid optimization result message.");
-            await _channel.BasicNackAsync(ea.DeliveryTag, multiple: false, requeue: false);
+            await SafeDlqOrRequeueAsync(ea, queueName, ex);
         }
         catch (DomainException ex)
         {
             logger.LogWarning(ex, "[Media] Rejected optimization result message.");
-            await _channel.BasicNackAsync(ea.DeliveryTag, multiple: false, requeue: false);
+            await SafeDlqOrRequeueAsync(ea, queueName, ex);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "[Media] Failed to handle optimization result message.");
-            await _channel.BasicNackAsync(ea.DeliveryTag, multiple: false, requeue: false);
+            await SafeRetryOrRequeueAsync(ea, queueName, ex);
+        }
+    }
+
+    private async Task SafeDlqOrRequeueAsync(
+        BasicDeliverEventArgs ea,
+        string queueName,
+        Exception exception)
+    {
+        try
+        {
+            await retryHelper.PublishToDlqAsync(_channel!, ea, queueName, exception, CancellationToken.None);
+            await _channel!.BasicAckAsync(ea.DeliveryTag, multiple: false);
+        }
+        catch (Exception publishEx)
+        {
+            logger.LogError(publishEx, "[Media] Failed to publish optimization result to DLQ.");
+            await _channel!.BasicNackAsync(ea.DeliveryTag, multiple: false, requeue: true);
+        }
+    }
+
+    private async Task SafeRetryOrRequeueAsync(
+        BasicDeliverEventArgs ea,
+        string queueName,
+        Exception exception)
+    {
+        try
+        {
+            var retried = await retryHelper.RetryOrDlqAsync(
+                _channel!,
+                ea,
+                queueName,
+                exception,
+                CancellationToken.None);
+            await _channel!.BasicAckAsync(ea.DeliveryTag, multiple: false);
+            logger.LogWarning(
+                "messaging.consumer.{Action} queue={QueueName} error={Error}",
+                retried ? "retry" : "dlq",
+                queueName,
+                exception.Message);
+        }
+        catch (Exception publishEx)
+        {
+            logger.LogError(publishEx, "[Media] Failed to publish optimization result retry/DLQ.");
+            await _channel!.BasicNackAsync(ea.DeliveryTag, multiple: false, requeue: true);
         }
     }
 

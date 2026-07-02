@@ -7,4 +7,11 @@ public interface IRabbitMqPublisher
     T message,
     CancellationToken cancellationToken = default
   );
+
+  Task PublishJsonAsync(
+    string routingKey,
+    string payloadJson,
+    IReadOnlyDictionary<string, object?>? headers = null,
+    CancellationToken cancellationToken = default
+  );
 }

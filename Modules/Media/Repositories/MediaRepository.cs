@@ -1,5 +1,6 @@
 using Kuvox.Api.Modules.Media.Enums;
 using Kuvox.Api.Modules.Media.Models;
+using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
 using Microsoft.EntityFrameworkCore;
 
 namespace Kuvox.Api.Modules.Media.Repositories;
@@ -71,6 +72,18 @@ internal sealed class MediaRepository(MediaDbContext db) : IMediaRepository
 
     public async Task AddMediaUserAsync(MediaUser mediaUser, CancellationToken cancellationToken = default) =>
         await db.MediaUsers.AddAsync(mediaUser, cancellationToken);
+
+    public async Task EnqueueOutboxAsync(OutboxMessage message, CancellationToken cancellationToken = default)
+    {
+        var exists = await db.OutboxMessages
+            .AnyAsync(existing => existing.DedupeKey == message.DedupeKey, cancellationToken);
+        if (exists)
+        {
+            return;
+        }
+
+        await db.OutboxMessages.AddAsync(message, cancellationToken);
+    }
 
     public void RemoveMediaUser(MediaUser mediaUser) => db.MediaUsers.Remove(mediaUser);
 

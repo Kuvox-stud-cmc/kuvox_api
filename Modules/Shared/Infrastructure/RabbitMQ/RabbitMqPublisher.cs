@@ -40,7 +40,20 @@ internal sealed class RabbitMqPublisher : IRabbitMqPublisher, IAsyncDisposable
         T message,
         CancellationToken cancellationToken = default)
     {
-        var body = Serialize(message);
+        await PublishJsonAsync(
+            routingKey,
+            Serialize(message),
+            headers: null,
+            cancellationToken);
+    }
+
+    public async Task PublishJsonAsync(
+        string routingKey,
+        string payloadJson,
+        IReadOnlyDictionary<string, object?>? headers = null,
+        CancellationToken cancellationToken = default)
+    {
+        var body = Encoding.UTF8.GetBytes(payloadJson);
 
         await _publishLock.WaitAsync(cancellationToken);
 
@@ -55,7 +68,8 @@ internal sealed class RabbitMqPublisher : IRabbitMqPublisher, IAsyncDisposable
                 ContentType = "application/json",
                 DeliveryMode = DeliveryModes.Persistent,
                 Type = routingKey,
-                Timestamp = new AmqpTimestamp(DateTimeOffset.UtcNow.ToUnixTimeSeconds())
+                Timestamp = new AmqpTimestamp(DateTimeOffset.UtcNow.ToUnixTimeSeconds()),
+                Headers = headers?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
             };
 
             await channel.BasicPublishAsync(
@@ -158,15 +172,13 @@ internal sealed class RabbitMqPublisher : IRabbitMqPublisher, IAsyncDisposable
         _declaredQueues.Add(routingKey);
     }
 
-    private static ReadOnlyMemory<byte> Serialize<T>(T message)
+    private static string Serialize<T>(T message)
     {
-        var json = JsonSerializer.Serialize(message, new JsonSerializerOptions
+        return JsonSerializer.Serialize(message, new JsonSerializerOptions
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             Converters = { new JsonStringEnumConverter() }
         });
-
-        return Encoding.UTF8.GetBytes(json);
     }
 
     public async ValueTask DisposeAsync()

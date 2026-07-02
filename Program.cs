@@ -5,6 +5,7 @@ using Kuvox.Api.Modules.Auth.Services;
 using Kuvox.Api.Modules.Projects;
 using Kuvox.Api.Modules.Projects.Repositories;
 using Kuvox.Api.Modules.Shared.Infrastructure;
+using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
 using Kuvox.Api.Modules.Shared.Infrastructure.RabbitMQ;
 using Kuvox.Api.Modules.Timelines;
 using Kuvox.Api.Modules.Timelines.Repositories;
@@ -62,7 +63,11 @@ builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(AuthM
 builder.Services.Configure<RabbitMqOptions>(
     builder.Configuration.GetSection("RabbitMq")
 );
+builder.Services.Configure<MessagingOptions>(
+    builder.Configuration.GetSection("Messaging")
+);
 builder.Services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
+builder.Services.AddSingleton<RabbitMqRetryHelper>();
 
 // Modules — each owns its own DbContext/schema (Rule 3) and registers its own services.
 builder.Services
