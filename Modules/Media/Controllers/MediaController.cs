@@ -40,8 +40,12 @@ public sealed class MediaController(IMediaService media) : ControllerBase
     public Task<MediaDto> Get(Guid id, CancellationToken ct) => media.GetAsync(id, Caller(), ct);
 
     [HttpPost]
-    public Task<MediaDto> Register([FromQuery] Guid? studioId, RegisterMediaRequest request, CancellationToken ct) =>
-        media.RegisterAsync(ResolveWorkspace(studioId), Caller(), request, ct);
+    [Consumes("multipart/form-data")]
+    public Task<MediaDto> Upload(
+        [FromQuery] Guid? studioId, 
+        [FromForm] UploadMediaRequest request, 
+        CancellationToken ct) =>
+        media.UploadRawAsync(ResolveWorkspace(studioId), Caller(), request, ct);
 
     [HttpPost("{id:guid}/share")]
     public async Task<IActionResult> Share(Guid id, ShareMediaRequest request, CancellationToken ct)

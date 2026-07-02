@@ -4,8 +4,10 @@ using Kuvox.Api.Modules.Media.Dtos;
 using Kuvox.Api.Modules.Media.Enums;
 using Kuvox.Api.Modules.Media.Models;
 using Kuvox.Api.Modules.Media.Repositories;
+using Kuvox.Api.Modules.Projects.Contracts;
 using Kuvox.Api.Modules.Shared.Dtos;
 using Kuvox.Api.Modules.Shared.Infrastructure;
+using Kuvox.Api.Modules.Shared.Infrastructure.RabbitMQ;
 using MediatR;
 
 namespace Kuvox.Api.Modules.Media.Services;
@@ -16,7 +18,13 @@ namespace Kuvox.Api.Modules.Media.Services;
 /// invitees through the Auth public contract (<see cref="IAuthApi"/>, Rule 2) and publishes
 /// <see cref="MediaDeletedEvent"/> on permanent delete (Rule 4).
 /// </summary>
-internal sealed class MediaService(IMediaRepository media, IAuthApi auth, IMediator mediator)
+internal sealed class MediaService(
+    IMediaRepository media, 
+    IAuthApi auth, 
+    IProjectsApi projects,
+    IMediator mediator,
+    IFileStorageService storage,
+    IRabbitMqPublisher publisher)
     : IMediaService
 {
     /// <summary>Trash auto-purge window (kept in sync with <c>TrashPurgeService</c>).</summary>
@@ -57,8 +65,11 @@ internal sealed class MediaService(IMediaRepository media, IAuthApi auth, IMedia
         return ToDto(item);
     }
 
-    public async Task<MediaDto> RegisterAsync(
-        WorkspaceScope scope, CallerContext caller, RegisterMediaRequest request, CancellationToken cancellationToken = default)
+    public async Task<MediaDto> UploadRawAsync(
+        WorkspaceScope scope, 
+        CallerContext caller, 
+        UploadMediaRequest request, 
+        CancellationToken cancellationToken = default)
     {
         if (!scope.IsStudio && !await auth.UserExistsAsync(scope.OwnerId, cancellationToken))
         {
@@ -70,53 +81,114 @@ internal sealed class MediaService(IMediaRepository media, IAuthApi auth, IMedia
             throw DomainException.Forbidden("You do not have permission to create Studio media.");
         }
 
-        Models.Media item = request.Kind switch
+        if (request.File is null || request.File.Length == 0)
         {
-            MediaKind.Video => new Video
-            {
-                DurationSeconds = 0,
-                Width = 0,
-                Height = 0,
-                FrameRate = 0,
-                OwnerId = scope.OwnerId,
-                OwnerKind = OwnerKindOf(scope),
-                ProjectId = request.ProjectId,
-                Filename = request.Filename.Trim(),
-                StorageKey = request.StorageKey.Trim(),
-                SizeBytes = request.SizeBytes,
-                Status = MediaStatus.Uploaded
-            },
-            MediaKind.Audio => new Audio
-            {
-                DurationSeconds = 0,
-                OwnerId = scope.OwnerId,
-                OwnerKind = OwnerKindOf(scope),
-                ProjectId = request.ProjectId,
-                Filename = request.Filename.Trim(),
-                StorageKey = request.StorageKey.Trim(),
-                SizeBytes = request.SizeBytes,
-                Status = MediaStatus.Uploaded
-            },
-            MediaKind.Image => new Photo
-            {
-                Width = 0,
-                Height = 0,
-                OwnerId = scope.OwnerId,
-                OwnerKind = OwnerKindOf(scope),
-                ProjectId = request.ProjectId,
-                Filename = request.Filename.Trim(),
-                StorageKey = request.StorageKey.Trim(),
-                SizeBytes = request.SizeBytes,
-                Status = MediaStatus.Uploaded
-            },
-            _ => throw DomainException.BadRequest("Unknown media kind.")
-        };
+            throw DomainException.BadRequest("File is empty.");
+        }
 
-        await media.AddAsync(item, cancellationToken);
-        await media.SaveChangesAsync(cancellationToken);
+        ValidateKindMatchesFile(request.Kind, request.File);
 
-        // NOTE: ingestion job dispatch (RabbitMQ/gRPC) is out of scope for Phase 2 — record only.
-        return ToDto(item);
+        if (request.ProjectId == Guid.Empty || !await projects.ProjectExistsAsync(request.ProjectId, cancellationToken))
+        {
+            throw DomainException.BadRequest("Unknown project.");
+        }
+
+        var mediaId = Guid.NewGuid();
+
+        StoredMediaObject? storedObject = null;
+
+        try
+        {
+            storedObject = await storage.UploadRawAsync(
+                request.File,
+                request.ProjectId,
+                mediaId,
+                cancellationToken
+            );
+
+            Models.Media item = request.Kind switch
+            {
+                MediaKind.Video => new Video
+                {
+                    Id = mediaId,
+                    DurationSeconds = 0,
+                    Width = 0,
+                    Height = 0,
+                    FrameRate = 0,
+                    OwnerId = scope.OwnerId,
+                    OwnerKind = OwnerKindOf(scope),
+                    ProjectId = request.ProjectId,
+                    Filename = Path.GetFileName(request.File.FileName).Trim(),
+                    StorageKey = storedObject.ObjectKey,
+                    SizeBytes = storedObject.SizeBytes,
+                    Status = MediaStatus.Uploaded
+                },
+                MediaKind.Audio => new Audio
+                {
+                    Id = mediaId,
+                    DurationSeconds = 0,
+                    OwnerId = scope.OwnerId,
+                    OwnerKind = OwnerKindOf(scope),
+                    ProjectId = request.ProjectId,
+                    Filename = Path.GetFileName(request.File.FileName).Trim(),
+                    StorageKey = storedObject.ObjectKey,
+                    SizeBytes = storedObject.SizeBytes,
+                    Status = MediaStatus.Uploaded
+                },
+                MediaKind.Image => new Photo
+                {
+                    Id = mediaId,
+                    Width = 0,
+                    Height = 0,
+                    OwnerId = scope.OwnerId,
+                    OwnerKind = OwnerKindOf(scope),
+                    ProjectId = request.ProjectId,
+                    Filename = Path.GetFileName(request.File.FileName).Trim(),
+                    StorageKey = storedObject.ObjectKey,
+                    SizeBytes = storedObject.SizeBytes,
+                    Status = MediaStatus.Uploaded
+                },
+                _ => throw DomainException.BadRequest("Unsupported media kind.")
+            };
+
+            await media.AddAsync(item, cancellationToken);
+            await media.SaveChangesAsync(cancellationToken);
+
+            var optimizationEvent = new MediaOptimizationRequestedEvent(
+                EventId: Guid.NewGuid(),
+                EventType: "media.optimization.requested",
+                OccurredAt: DateTimeOffset.UtcNow,
+                MediaId: item.Id,
+                ProjectId: request.ProjectId,
+                UserId: caller.UserId,
+                BucketName: storedObject.BucketName,
+                ObjectKey: storedObject.ObjectKey,
+                ContentType: storedObject.ContentType,
+                OriginalFileName: item.Filename,
+                SizeBytes: storedObject.SizeBytes,
+                Kind: item.Kind
+            );
+
+            await publisher.PublishAsync(
+                routingKey: "media.optimization.requested",
+                message: optimizationEvent,
+                cancellationToken
+            );
+
+            return ToDto(item);
+        }
+        catch
+        {
+            if (storedObject is not null)
+            {
+                await storage.DeleteAsync(
+                    storedObject.BucketName,
+                    storedObject.ObjectKey,
+                    CancellationToken.None
+                );
+            }
+            throw;
+        }
     }
 
     public async Task ShareAsync(
@@ -197,7 +269,27 @@ internal sealed class MediaService(IMediaRepository media, IAuthApi auth, IMedia
         media.Remove(item);
         await media.SaveChangesAsync(cancellationToken);
 
+        await storage.DeleteAsync("kuvox-raw", item.StorageKey, cancellationToken);
+
         await mediator.Publish(new MediaDeletedEvent(item.Id), cancellationToken);
+    }
+
+    private static void ValidateKindMatchesFile(MediaKind kind, IFormFile file)
+    {
+        var contentType = file.ContentType.ToLowerInvariant();
+
+        var valid = kind switch
+        {
+            MediaKind.Video => contentType.StartsWith("video/"),
+            MediaKind.Audio => contentType.StartsWith("audio/"),
+            MediaKind.Image => contentType.StartsWith("image/"),
+            _ => false
+        };
+
+        if (!valid)
+        {
+            throw DomainException.BadRequest($"File content type '{file.ContentType}' does not match media kind '{kind}'.");
+        }
     }
 
     private async Task<Models.Media> LoadLiveAsync(Guid id, CancellationToken cancellationToken)
@@ -261,7 +353,7 @@ internal sealed class MediaService(IMediaRepository media, IAuthApi auth, IMedia
         int? height = m switch { Video v => v.Height, Photo p => p.Height, _ => null };
         double? frameRate = m switch { Video v => v.FrameRate, _ => null };
         
-        return new(m.Id, m.OwnerId, m.OwnerKind, m.Kind, m.ProjectId, m.Filename, m.StorageKey, m.SizeBytes,
+        return new(m.Id, m.OwnerId, m.OwnerKind, m.Kind, m.Filename, m.StorageKey, m.SizeBytes,
             m.Status.ToString(), duration, width, height, m.Codec, frameRate, m.CreatedAt);
     }
 

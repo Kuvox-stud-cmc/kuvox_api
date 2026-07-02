@@ -14,7 +14,7 @@ public interface IMediaService
 
     Task<MediaDto> GetAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default);
 
-    Task<MediaDto> RegisterAsync(WorkspaceScope scope, CallerContext caller, RegisterMediaRequest request, CancellationToken cancellationToken = default);
+    Task<MediaDto> UploadRawAsync(WorkspaceScope scope, CallerContext caller, UploadMediaRequest request, CancellationToken cancellationToken = default);
 
     Task ShareAsync(Guid id, CallerContext caller, ShareMediaRequest request, CancellationToken cancellationToken = default);
 

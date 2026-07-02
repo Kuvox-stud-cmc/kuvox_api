@@ -7,7 +7,6 @@ public sealed record MediaDto(
     Guid OwnerId,
     OwnerKind OwnerKind,
     MediaKind Kind,
-    Guid? ProjectId,
     string Filename,
     string StorageKey,
     long SizeBytes,
@@ -20,16 +19,11 @@ public sealed record MediaDto(
     DateTimeOffset CreatedAt
 );
 
-/// <summary>
-/// Registers an uploaded object as a media item pending ingestion. Owner (workspace + user) is
-/// derived from the JWT + <c>studioId</c> query — never trusted from the body (plan §1).
-/// </summary>
-public sealed record RegisterMediaRequest(
+public sealed record UploadMediaRequest(
+    IFormFile File,
     MediaKind Kind,
-    Guid? ProjectId,
-    string Filename,
-    string StorageKey,
-    long SizeBytes);
+    Guid ProjectId
+);
 
 /// <summary>Grants another user (looked up by email) access to a media item.</summary>
 public sealed record ShareMediaRequest(string Email, Permission Role);

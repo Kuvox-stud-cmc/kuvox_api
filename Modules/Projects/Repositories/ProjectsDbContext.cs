@@ -15,6 +15,8 @@ public sealed class ProjectsDbContext(DbContextOptions<ProjectsDbContext> option
 
     public DbSet<ProjectUser> ProjectUsers => Set<ProjectUser>();
 
+    public DbSet<ProjectMedia> ProjectMedias => Set<ProjectMedia>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema(Schema);
@@ -58,6 +60,18 @@ public sealed class ProjectsDbContext(DbContextOptions<ProjectsDbContext> option
             entity.HasOne<Project>()
                 .WithMany()
                 .HasForeignKey(pu => pu.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ProjectMedia>(entity =>
+        {
+            entity.ToTable("project_medias");
+            entity.HasKey(pm => new { pm.ProjectId, pm.MediaId });
+            entity.HasIndex(pm => pm.MediaId);
+
+            entity.HasOne<Project>()
+                .WithMany()
+                .HasForeignKey(pm => pm.ProjectId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

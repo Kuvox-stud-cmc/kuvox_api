@@ -49,7 +49,6 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
             entity.Property(m => m.Height).IsRequired();
             entity.Property(m => m.FrameRate).HasPrecision(18, 6).IsRequired();
             entity.Property(m => m.SizeBytes).IsRequired();
-            entity.HasIndex(m => m.ProjectId);
             entity.HasIndex(m => new { m.OwnerKind, m.OwnerId });
             entity.HasIndex(m => m.DeletedAt);
         });
@@ -67,7 +66,6 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
             entity.Property(a => a.ArchiveReason).HasMaxLength(1024);
             entity.Property(a => a.DurationSeconds).HasPrecision(18, 6).IsRequired();
             entity.Property(a => a.SizeBytes).IsRequired();
-            entity.HasIndex(a => a.ProjectId);
             entity.HasIndex(a => new { a.OwnerKind, a.OwnerId });
             entity.HasIndex(a => a.DeletedAt);
         });
@@ -85,7 +83,6 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
             entity.Property(p => p.ArchiveReason).HasMaxLength(1024);
             entity.Property(p => p.Width).IsRequired();
             entity.Property(p => p.Height).IsRequired();
-            entity.HasIndex(p => p.ProjectId);
             entity.HasIndex(p => new { p.OwnerKind, p.OwnerId });
             entity.HasIndex(p => p.DeletedAt);
         });

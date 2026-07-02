@@ -26,11 +26,15 @@ internal interface IProjectRepository
 
     Task<ProjectUser?> GetProjectUserAsync(Guid projectId, Guid userId, CancellationToken cancellationToken = default);
 
+    Task<ProjectMedia?> GetProjectMediaByMediaIdAsync(Guid mediaId, CancellationToken cancellationToken = default);
+
     Task AddAsync(Project project, CancellationToken cancellationToken = default);
 
     Task AddProjectUserAsync(ProjectUser projectUser, CancellationToken cancellationToken = default);
 
     void RemoveProjectUser(ProjectUser projectUser);
+
+    void RemoveProjectMedia(ProjectMedia projectMedia);
 
     void Remove(Project project);
 

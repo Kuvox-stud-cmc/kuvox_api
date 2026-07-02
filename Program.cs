@@ -5,6 +5,7 @@ using Kuvox.Api.Modules.Auth.Services;
 using Kuvox.Api.Modules.Projects;
 using Kuvox.Api.Modules.Projects.Repositories;
 using Kuvox.Api.Modules.Shared.Infrastructure;
+using Kuvox.Api.Modules.Shared.Infrastructure.RabbitMQ;
 using Kuvox.Api.Modules.Timelines;
 using Kuvox.Api.Modules.Timelines.Repositories;
 using Kuvox.Api.Modules.Media;
@@ -57,6 +58,11 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 // Cross-module events (Rule 4): scan this assembly for INotificationHandler<>.
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(AuthModule).Assembly));
+
+builder.Services.Configure<RabbitMqOptions>(
+    builder.Configuration.GetSection("RabbitMq")
+);
+builder.Services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
 
 // Modules — each owns its own DbContext/schema (Rule 3) and registers its own services.
 builder.Services

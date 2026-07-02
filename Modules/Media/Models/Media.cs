@@ -20,8 +20,7 @@ public abstract class Media : BaseEntity
 
     public required OwnerKind OwnerKind { get; set; }
 
-
-    /// <summary>Optional link to a project that uses this media (references Projects by id only).</summary>
+    /// <summary>Optional project this media belongs to. Stored as an id only; Projects owns the row.</summary>
     public Guid? ProjectId { get; set; }
 
     public required string Filename { get; set; }
