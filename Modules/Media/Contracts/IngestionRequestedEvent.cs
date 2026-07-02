@@ -7,11 +7,15 @@ public sealed record IngestionRequestedEvent(
   string EventType,
   DateTimeOffset OccurredAt,
   Guid MediaId,
-  Guid UserId,
-  string BucketName,
-  string ObjectKey,
-  string ContentType,
-  string OriginalFileName,
-  long SizeBytes,
-  MediaKind Kind
+  Guid OwnerId,
+  OwnerKind OwnerKind,
+  MediaKind Kind,
+  OptimizedMediaObject Canonical,
+  OptimizedMediaObject? Proxy,
+  OptimizedMediaObject? Thumbnail,
+  double? DurationSeconds,
+  int? Width,
+  int? Height,
+  double? FrameRate,
+  string? Codec
 );

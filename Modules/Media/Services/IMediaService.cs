@@ -21,6 +21,10 @@ public interface IMediaService
 
     Task HandleOptimizationFailedAsync(MediaOptimizationFailedEvent failed, CancellationToken cancellationToken = default);
 
+    Task HandleIngestionCompletedAsync(IngestionCompletedEvent completed, CancellationToken cancellationToken = default);
+
+    Task HandleIngestionFailedAsync(IngestionFailedEvent failed, CancellationToken cancellationToken = default);
+
     Task ShareAsync(Guid id, CallerContext caller, ShareMediaRequest request, CancellationToken cancellationToken = default);
 
     Task UnshareAsync(Guid id, CallerContext caller, Guid userId, CancellationToken cancellationToken = default);

@@ -224,7 +224,7 @@ internal sealed class MediaService(
 
         item.StorageKey = canonical.ObjectKey;
         item.SizeBytes = canonical.SizeBytes;
-        item.Status = MediaStatus.Ready;
+        item.Status = MediaStatus.Processing;
         item.ErrorMessage = null;
         item.Codec = completed.Codec;
         item.UpdatedAt = DateTimeOffset.UtcNow;
@@ -245,34 +245,95 @@ internal sealed class MediaService(
 
         await media.SaveChangesAsync(cancellationToken);
 
-        if (item.RawBucketName is not { Length: > 0 } rawBucket
-            || item.RawStorageKey is not { Length: > 0 } rawKey)
+        if (item.RawBucketName is { Length: > 0 } rawBucket
+            && item.RawStorageKey is { Length: > 0 } rawKey)
         {
-            return;
+            try
+            {
+                await storage.DeleteAsync(rawBucket, rawKey, cancellationToken);
+                item.RawBucketName = null;
+                item.RawStorageKey = null;
+                item.RawSizeBytes = null;
+                item.UpdatedAt = DateTimeOffset.UtcNow;
+                await media.SaveChangesAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(
+                    ex,
+                    "[Media] Failed to delete raw object {BucketName}/{ObjectKey} after optimizing media {MediaId}.",
+                    rawBucket,
+                    rawKey,
+                    item.Id);
+            }
         }
 
-        try
-        {
-            await storage.DeleteAsync(rawBucket, rawKey, cancellationToken);
-            item.RawBucketName = null;
-            item.RawStorageKey = null;
-            item.RawSizeBytes = null;
-            item.UpdatedAt = DateTimeOffset.UtcNow;
-            await media.SaveChangesAsync(cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(
-                ex,
-                "[Media] Failed to delete raw object {BucketName}/{ObjectKey} after optimizing media {MediaId}.",
-                rawBucket,
-                rawKey,
-                item.Id);
-        }
+        var ingestionEvent = new IngestionRequestedEvent(
+            EventId: Guid.NewGuid(),
+            EventType: "ingestion.requested",
+            OccurredAt: DateTimeOffset.UtcNow,
+            MediaId: item.Id,
+            OwnerId: item.OwnerId,
+            OwnerKind: item.OwnerKind,
+            Kind: item.Kind,
+            Canonical: canonical,
+            Proxy: completed.Proxy,
+            Thumbnail: completed.Thumbnail,
+            DurationSeconds: completed.DurationSeconds,
+            Width: completed.Width,
+            Height: completed.Height,
+            FrameRate: completed.FrameRate,
+            Codec: completed.Codec
+        );
+
+        await publisher.PublishAsync(
+            routingKey: "ingestion.requested",
+            message: ingestionEvent,
+            cancellationToken: cancellationToken
+        );
     }
 
     public async Task HandleOptimizationFailedAsync(
         MediaOptimizationFailedEvent failed,
+        CancellationToken cancellationToken = default)
+    {
+        var item = await media.GetByIdAsync(failed.MediaId, cancellationToken);
+        if (item is null)
+        {
+            return;
+        }
+
+        item.Status = MediaStatus.Failed;
+        item.ErrorMessage = string.IsNullOrWhiteSpace(failed.ErrorMessage)
+            ? failed.ErrorCode
+            : failed.ErrorMessage;
+        item.UpdatedAt = DateTimeOffset.UtcNow;
+        await media.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task HandleIngestionCompletedAsync(
+        IngestionCompletedEvent completed,
+        CancellationToken cancellationToken = default)
+    {
+        var item = await media.GetByIdAsync(completed.MediaId, cancellationToken);
+        if (item is null)
+        {
+            return;
+        }
+
+        if (item.Status == MediaStatus.Ready)
+        {
+            return;
+        }
+
+        item.Status = MediaStatus.Ready;
+        item.ErrorMessage = null;
+        item.UpdatedAt = DateTimeOffset.UtcNow;
+        await media.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task HandleIngestionFailedAsync(
+        IngestionFailedEvent failed,
         CancellationToken cancellationToken = default)
     {
         var item = await media.GetByIdAsync(failed.MediaId, cancellationToken);

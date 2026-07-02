@@ -50,6 +50,7 @@ public static class MediaModule
         services.AddScoped<IAlbumService, AlbumService>();
         services.AddScoped<IMediaApi, MediaApi>();
         services.AddHostedService<MediaOptimizationResultConsumer>();
+        services.AddHostedService<IngestionResultConsumer>();
 
         return services;
     }
