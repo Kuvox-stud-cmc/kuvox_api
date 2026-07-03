@@ -11,6 +11,7 @@ using Kuvox.Api.Modules.Timelines;
 using Kuvox.Api.Modules.Timelines.Repositories;
 using Kuvox.Api.Modules.Media;
 using Kuvox.Api.Modules.Media.Repositories;
+using Kuvox.Api.Modules.Media.Services;
 using Kuvox.Api.Modules.Notifications;
 using Kuvox.Api.Modules.Notifications.Repositories;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -48,6 +49,7 @@ builder.Services.AddSerilog((sp, lc) =>
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddControllers();
+builder.Services.AddSignalR();
 
 // Exception handlers run in registration order; the first to claim an exception wins, so the
 // specific ones (501 scaffolds, auth 401/4xx, domain 4xx) precede the catch-all 500.
@@ -135,6 +137,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<MediaHub>("/hubs/media");
 
 app.Run();
 

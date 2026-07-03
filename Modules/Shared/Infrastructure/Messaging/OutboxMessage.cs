@@ -12,7 +12,7 @@ public enum OutboxMessageStatus
 
 public sealed class OutboxMessage
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    internal static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         Converters = { new JsonStringEnumConverter() }
@@ -20,12 +20,12 @@ public sealed class OutboxMessage
 
     public Guid Id { get; init; } = Guid.NewGuid();
     public string DedupeKey { get; init; } = string.Empty;
-    public string Transport { get; init; } = "rabbitmq";
-    public string Exchange { get; init; } = string.Empty;
-    public string RoutingKey { get; init; } = string.Empty;
-    public string EventType { get; init; } = string.Empty;
-    public string PayloadJson { get; init; } = string.Empty;
-    public string HeadersJson { get; init; } = "{}";
+    public string Transport { get; set; } = "rabbitmq";
+    public string Exchange { get; set; } = string.Empty;
+    public string RoutingKey { get; set; } = string.Empty;
+    public string EventType { get; set; } = string.Empty;
+    public string PayloadJson { get; set; } = string.Empty;
+    public string HeadersJson { get; set; } = "{}";
     public OutboxMessageStatus Status { get; set; } = OutboxMessageStatus.Pending;
     public int AttemptCount { get; set; }
     public DateTimeOffset NextAttemptAt { get; set; } = DateTimeOffset.UtcNow;

@@ -39,6 +39,27 @@ public sealed class MediaController(IMediaService media) : ControllerBase
     [HttpGet("{id:guid}")]
     public Task<MediaDto> Get(Guid id, CancellationToken ct) => media.GetAsync(id, Caller(), ct);
 
+    /// <summary>Streams a stored media object variant for the current caller.</summary>
+    [HttpGet("{id:guid}/object/{variant}")]
+    [HttpHead("{id:guid}/object/{variant}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetObject(Guid id, string variant, CancellationToken ct)
+    {
+        var file = await media.GetObjectAsync(id, variant, Caller(), ct);
+        Response.Headers.CacheControl = "private, max-age=300";
+        if (file.ContentLength is > 0)
+        {
+            Response.ContentLength = file.ContentLength;
+        }
+
+        if (!string.IsNullOrWhiteSpace(file.ETag))
+        {
+            Response.Headers.ETag = file.ETag;
+        }
+
+        return File(file.Stream, file.ContentType, enableRangeProcessing: true);
+    }
+
     [HttpPost]
     [Consumes("multipart/form-data")]
     public Task<MediaDto> Upload(

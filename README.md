@@ -27,6 +27,9 @@ between the frontend clients and the Python AI service.
 # Restore dependencies
 dotnet restore
 
+# Create the local SeaweedFS S3 auth file, then replace the placeholder secrets.
+cp ../infra/seaweedfs/s3.json.example ../infra/seaweedfs/s3.json
+
 # Start local infra (Postgres, Redis, RabbitMQ, SeaweedFS)
 docker compose up -d
 
@@ -91,16 +94,33 @@ In `Development`, module DbContexts auto-migrate on startup, so `docker compose 
 
 Media uploads are library-scoped, not project-bound. The API stores raw uploads in
 SeaweedFS under `media/{mediaId}/raw/original{ext}`, saves the media row as `Uploaded`,
-and publishes `media.optimization.requested` without a `projectId`. Project/media
-membership is owned by the Projects module through the TPC `ProjectMedia` hierarchy:
-`projects.project_images`, `projects.project_audios`, and `projects.project_videos`.
+and enqueues `media.optimization.requested` through `shared.outbox_messages` without a
+`projectId`. Project/media membership is owned by the Projects module through the TPC
+`ProjectMedia` hierarchy: `projects.project_images`, `projects.project_audios`, and
+`projects.project_videos`.
 
 The API also consumes `media.optimization.completed` and `media.optimization.failed`
 from RabbitMQ queues `api.media.optimization.completed` and
 `api.media.optimization.failed`. Completion stores canonical/proxy/thumbnail object
-keys and bucket names, marks media `Ready`, then deletes raw storage only after the DB
-update succeeds. Failure marks media `Failed` and keeps the raw object for inspection or
-later cleanup.
+keys and bucket names, marks images/audio `Ready`, and moves videos to `Processing`
+while enqueueing `ingestion.requested`. Raw storage is deleted only after optimized
+metadata is persisted. Failure marks media `Failed` while keeping raw objects for
+inspection or later cleanup unless the media has already advanced to `Processing` or
+`Ready`.
+
+The API includes a media pipeline recovery hosted service. On startup and every
+configured interval, it scans stale live media in `Uploaded` or `Processing`, revives
+the stable outbox row for the current stage, and updates `UpdatedAt` so the same row is
+not immediately requeued again. Stale `Uploaded` rows with raw object metadata are
+requeued to `media.optimization.requested`; stale processing videos with canonical
+metadata are requeued to `ingestion.requested`; stale processing images/audio with
+canonical metadata are marked `Ready`. Rows without enough raw/canonical metadata are
+marked `Failed` with a recovery error.
+
+The FastAPI AI service process does not consume these jobs by itself. For end-to-end
+media processing, keep the AI media optimization worker running; for videos, keep the
+AI ingestion worker running as well. In RabbitMQ, `media.optimization.requested` should
+show at least one consumer while uploads are being optimized.
 
 > **Single-assembly caveat:** because every module lives in one `api.csproj`, `internal`
 > and the `Contracts`-only boundary are conventions, not compiler-enforced isolation. To
@@ -112,6 +132,29 @@ later cleanup.
 Configuration is loaded from `appsettings.json`, `appsettings.{Environment}.json`,
 and environment variables. Key variables:
 
+For local native development, copy `.env.example` to `api/.env`.
+
+- Linux: keep infra hosts on `localhost`; Compose publishes Postgres, Redis,
+  RabbitMQ, and SeaweedFS ports to the host.
+- macOS: use the same `localhost` values as Linux.
+- Windows: use the same `localhost` values as Linux/macOS; the API has no
+  OS-specific local scratch paths.
+- Docker: do not use `localhost` for infra from inside the API container.
+
+If the API itself runs inside Docker Compose, `localhost` means the API container,
+not the infra containers. Use Compose service names instead:
+
+```env
+ConnectionStrings__Postgres=Host=postgres;Port=5432;Database=kuvox;Username=kuvox;Password=kuvox
+ConnectionStrings__Redis=redis:6379
+RabbitMQ__HostName=rabbitmq
+Storage__Endpoint=http://seaweedfs-s3:8333
+```
+
+For production, prefer real environment variables or a secret manager over committing
+`.env` files. Keep one infra set active at a time: use either the workspace-root
+Compose file for full-stack development or a per-repo Compose file for isolated work.
+
 | Variable                      | Description                            | Default                            |
 | ----------------------------- | -------------------------------------- | ---------------------------------- |
 | `ConnectionStrings__Postgres` | PostgreSQL connection string           | see `appsettings.Development.json` |
@@ -120,7 +163,21 @@ and environment variables. Key variables:
 | `Jwt__Secret`                 | JWT signing key                        | —                                  |
 | `Jwt__Issuer`                 | JWT issuer claim                       | `kuvox-api`                        |
 | `Storage__Endpoint`           | S3-compatible object storage endpoint  | `http://localhost:8333`            |
+| `Storage__Region`             | S3 signing region                      | `us-east-1`                        |
+| `Storage__AccessKey`          | API S3 access key                      | —                                  |
+| `Storage__SecretKey`          | API S3 secret key                      | —                                  |
+| `Storage__RawBucketName`      | Raw upload bucket                      | `kuvox-raw`                        |
+| `Storage__CreateBucket`       | Allow API to create upload bucket      | `false`                            |
+| `MediaPipelineRecovery__Enabled` | Enable stale media recovery         | `true`                             |
+| `MediaPipelineRecovery__StaleAfterMinutes` | Stale age for `Uploaded`/`Processing` media | `15`              |
+| `MediaPipelineRecovery__PollIntervalSeconds` | Recovery poll interval       | `60`                               |
+| `MediaPipelineRecovery__BatchSize` | Max media rows reconciled per pass  | `100`                              |
 | `AiService__GrpcUrl`          | gRPC endpoint of the Python AI service | `http://localhost:50051`           |
+
+Storage credentials are required server-side and should be supplied via `.env`,
+environment variables, or a secret manager. The browser uploads only through
+`/bff/media/upload` -> `/api/media`; do not put `Storage__*`, `AWS_*`, or
+SeaweedFS credentials in frontend env files.
 
 ## Docker
 

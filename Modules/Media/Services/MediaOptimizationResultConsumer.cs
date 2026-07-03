@@ -254,8 +254,7 @@ internal sealed class MediaOptimizationResultConsumer(
                 && failed.EventId != Guid.Empty
                 && failed.SourceEventId != Guid.Empty
                 && failed.MediaId != Guid.Empty
-                && !string.IsNullOrWhiteSpace(failed.ErrorCode)
-                && !string.IsNullOrWhiteSpace(failed.ErrorMessage),
+                && !string.IsNullOrWhiteSpace(failed.ErrorCode),
             _ => false
         };
 

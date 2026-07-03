@@ -15,6 +15,8 @@ public interface IMediaService
 
     Task<MediaDto> GetAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default);
 
+    Task<MediaObjectDownload> GetObjectAsync(Guid id, string variant, CallerContext caller, CancellationToken cancellationToken = default);
+
     Task<MediaDto> UploadRawAsync(WorkspaceScope scope, CallerContext caller, UploadMediaRequest request, CancellationToken cancellationToken = default);
 
     Task HandleOptimizationCompletedAsync(MediaOptimizationCompletedEvent completed, CancellationToken cancellationToken = default);
@@ -35,3 +37,10 @@ public interface IMediaService
 
     Task PermanentDeleteAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default);
 }
+
+public sealed record MediaObjectDownload(
+    Stream Stream,
+    string ContentType,
+    long? ContentLength,
+    string? ETag,
+    string FileName);

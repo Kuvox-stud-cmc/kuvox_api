@@ -7,6 +7,13 @@ public record StoredMediaObject(
   long SizeBytes
 );
 
+public sealed record DownloadedMediaObject(
+  Stream Stream,
+  string? ContentType,
+  long? ContentLength,
+  string? ETag
+);
+
 public interface IFileStorageService
 {
   Task<StoredMediaObject> UploadRawAsync(
@@ -15,7 +22,7 @@ public interface IFileStorageService
     CancellationToken cancellationToken = default
   );
 
-  Task<Stream> DownloadAsync(
+  Task<DownloadedMediaObject> DownloadAsync(
     string bucketName,
     string objectKey,
     CancellationToken cancellationToken = default

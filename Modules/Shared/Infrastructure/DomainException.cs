@@ -18,4 +18,6 @@ public sealed class DomainException(int statusCode, string message) : Exception(
     public static DomainException Conflict(string message) => new(StatusCodes.Status409Conflict, message);
 
     public static DomainException BadRequest(string message) => new(StatusCodes.Status400BadRequest, message);
+
+    public static DomainException ServiceUnavailable(string message) => new(StatusCodes.Status503ServiceUnavailable, message);
 }

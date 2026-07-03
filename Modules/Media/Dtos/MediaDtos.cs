@@ -20,12 +20,23 @@ public sealed record MediaDto(
     int? Height,
     string? Codec,
     double? FrameRate,
-    DateTimeOffset CreatedAt
+    DateTimeOffset CreatedAt,
+    MediaPipelineDto Pipeline
+);
+
+public sealed record MediaPipelineDto(
+    string Stage,
+    string Label,
+    string Detail,
+    int Step,
+    int StepCount,
+    bool Terminal
 );
 
 public sealed record UploadMediaRequest(
     IFormFile File,
-    MediaKind Kind
+    MediaKind Kind,
+    string? Filename
 );
 
 /// <summary>Grants another user (looked up by email) access to a media item.</summary>

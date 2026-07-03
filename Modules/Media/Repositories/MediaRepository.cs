@@ -64,6 +64,19 @@ internal sealed class MediaRepository(MediaDbContext db) : IMediaRepository
     public async Task<IReadOnlyList<Models.Media>> ListDeletedBeforeAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default) =>
         await db.Media.Where(m => m.DeletedAt != null && m.DeletedAt < cutoff).ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<Models.Media>> ListStalePipelineAsync(
+        DateTimeOffset cutoff,
+        int batchSize,
+        CancellationToken cancellationToken = default) =>
+        await db.Media
+            .Where(m =>
+                m.DeletedAt == null
+                && m.UpdatedAt <= cutoff
+                && (m.Status == MediaStatus.Uploaded || m.Status == MediaStatus.Processing))
+            .OrderBy(m => m.UpdatedAt)
+            .Take(batchSize)
+            .ToListAsync(cancellationToken);
+
     public Task<MediaUser?> GetMediaUserAsync(Guid mediaId, Guid userId, CancellationToken cancellationToken = default) =>
         db.MediaUsers.FirstOrDefaultAsync(mu => mu.MediaId == mediaId && mu.UserId == userId, cancellationToken);
 
@@ -83,6 +96,35 @@ internal sealed class MediaRepository(MediaDbContext db) : IMediaRepository
         }
 
         await db.OutboxMessages.AddAsync(message, cancellationToken);
+    }
+
+    public async Task EnsurePendingOutboxAsync(OutboxMessage message, CancellationToken cancellationToken = default)
+    {
+        var existing = await db.OutboxMessages
+            .FirstOrDefaultAsync(row => row.DedupeKey == message.DedupeKey, cancellationToken);
+        if (existing is null)
+        {
+            await db.OutboxMessages.AddAsync(message, cancellationToken);
+            return;
+        }
+
+        if (existing.Status == OutboxMessageStatus.Pending)
+        {
+            return;
+        }
+
+        existing.Transport = message.Transport;
+        existing.Exchange = message.Exchange;
+        existing.RoutingKey = message.RoutingKey;
+        existing.EventType = message.EventType;
+        existing.PayloadJson = message.PayloadJson;
+        existing.HeadersJson = message.HeadersJson;
+        existing.Status = OutboxMessageStatus.Pending;
+        existing.AttemptCount = 0;
+        existing.NextAttemptAt = DateTimeOffset.UtcNow;
+        existing.LockedUntil = null;
+        existing.LastError = null;
+        existing.PublishedAt = null;
     }
 
     public void RemoveMediaUser(MediaUser mediaUser) => db.MediaUsers.Remove(mediaUser);

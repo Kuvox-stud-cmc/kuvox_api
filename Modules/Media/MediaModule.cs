@@ -1,10 +1,11 @@
+using Amazon.Runtime;
+using Amazon.S3;
 using Kuvox.Api.Modules.Media.Contracts;
 using Kuvox.Api.Modules.Media.Repositories;
 using Kuvox.Api.Modules.Media.Services;
 using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
 using Microsoft.EntityFrameworkCore;
-using Amazon.Runtime;
-using Amazon.S3;
+using Microsoft.Extensions.Options;
 
 namespace Kuvox.Api.Modules.Media;
 
@@ -17,28 +18,26 @@ public static class MediaModule
                 configuration.GetConnectionString("Postgres"),
                 npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", MediaDbContext.Schema)));
 
-        services.AddSingleton<IAmazonS3>(_ =>
+        services.AddOptions<StorageOptions>()
+            .Bind(configuration.GetSection(StorageOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<StorageOptions>, StorageOptionsValidator>();
+        services.AddOptions<MediaPipelineRecoveryOptions>()
+            .Bind(configuration.GetSection(MediaPipelineRecoveryOptions.SectionName))
+            .Validate(options => options.StaleAfterMinutes > 0, "MediaPipelineRecovery:StaleAfterMinutes must be positive.")
+            .Validate(options => options.PollIntervalSeconds > 0, "MediaPipelineRecovery:PollIntervalSeconds must be positive.")
+            .Validate(options => options.BatchSize > 0, "MediaPipelineRecovery:BatchSize must be positive.")
+            .ValidateOnStart();
+
+        services.AddSingleton<IAmazonS3>(sp =>
         {
-            var storage = configuration.GetSection("Storage");
-
-            var endpoint = storage["Endpoint"]
-                ?? throw new InvalidOperationException("Storage:Endpoint is missing.");
-
-            var accessKey = storage["AccessKey"]
-                ?? throw new InvalidOperationException("Storage:AccessKey is missing.");
-
-            var secretKey = storage["SecretKey"]
-                ?? throw new InvalidOperationException("Storage:SecretKey is missing.");
-
-            var region = storage["Region"] ?? "us-east-1";
-
-            var credentials = new BasicAWSCredentials(accessKey, secretKey);
-
+            var options = sp.GetRequiredService<IOptions<StorageOptions>>().Value;
+            var credentials = new BasicAWSCredentials(options.AccessKey, options.SecretKey);
             var s3Config = new AmazonS3Config
             {
-                ServiceURL = endpoint,
+                ServiceURL = options.Endpoint,
                 ForcePathStyle = true,
-                AuthenticationRegion = region
+                AuthenticationRegion = options.Region
             };
 
             return new AmazonS3Client(credentials, s3Config);
@@ -50,8 +49,10 @@ public static class MediaModule
         services.AddScoped<IMediaService, MediaService>();
         services.AddScoped<IAlbumService, AlbumService>();
         services.AddScoped<IMediaApi, MediaApi>();
+        services.AddScoped<IMediaRealtimeNotifier, MediaRealtimeNotifier>();
         services.AddHostedService<MediaOptimizationResultConsumer>();
         services.AddHostedService<IngestionResultConsumer>();
+        services.AddHostedService<MediaPipelineRecoveryService>();
         services.AddHostedService<OutboxDispatcher>();
 
         return services;

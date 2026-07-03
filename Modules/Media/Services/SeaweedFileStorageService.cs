@@ -1,17 +1,18 @@
 using Amazon.S3;
 using Amazon.S3.Model;
+using Kuvox.Api.Modules.Shared.Infrastructure;
+using Microsoft.Extensions.Options;
 
 namespace Kuvox.Api.Modules.Media.Services;
 
-public class SeaweedFileStorageService : IFileStorageService
+public class SeaweedFileStorageService(
+  IAmazonS3 s3,
+  IOptions<StorageOptions> options,
+  ILogger<SeaweedFileStorageService> logger) : IFileStorageService
 {
-  private const string RawBucketName = "kuvox-raw";
-  private readonly IAmazonS3 _s3;
-
-  public SeaweedFileStorageService(IAmazonS3 s3)
-  {
-    _s3 = s3;
-  }
+  private readonly IAmazonS3 _s3 = s3;
+  private readonly StorageOptions _options = options.Value;
+  private readonly ILogger<SeaweedFileStorageService> _logger = logger;
 
   public async Task<StoredMediaObject> UploadRawAsync(
     IFormFile file,
@@ -27,29 +28,50 @@ public class SeaweedFileStorageService : IFileStorageService
     var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
     var objectKey = $"media/{mediaId}/raw/original{extension}";
 
-    await EnsureBucketExistsAsync(RawBucketName, cancellationToken);
-
-    await using var stream = file.OpenReadStream();
-
-    var request = new PutObjectRequest
+    try
     {
-      BucketName = RawBucketName,
-      Key = objectKey,
-      InputStream = stream,
-      ContentType = file.ContentType,
-    };
+      await EnsureBucketExistsAsync(_options.RawBucketName, cancellationToken);
 
-    await _s3.PutObjectAsync(request, cancellationToken);
+      await using var stream = file.OpenReadStream();
+
+      var request = new PutObjectRequest
+      {
+        BucketName = _options.RawBucketName,
+        Key = objectKey,
+        InputStream = stream,
+        ContentType = file.ContentType,
+      };
+      request.Headers.ContentLength = file.Length;
+
+      await _s3.PutObjectAsync(request, cancellationToken);
+    }
+    catch (Exception ex) when (IsStorageUnavailable(ex))
+    {
+      _logger.LogError(
+        ex,
+        "[Media] Raw upload storage write failed for bucket {BucketName}, key {ObjectKey}.",
+        _options.RawBucketName,
+        objectKey);
+      throw DomainException.ServiceUnavailable(
+        "Object storage is unavailable. Check the SeaweedFS S3 gateway and bucket configuration.");
+    }
 
     return new StoredMediaObject(
-      RawBucketName,
+      _options.RawBucketName,
       objectKey,
       file.ContentType,
       file.Length
     );
   }
 
-  public async Task<Stream> DownloadAsync(
+  private static bool IsStorageUnavailable(Exception exception) =>
+    exception is Amazon.Runtime.AmazonServiceException
+      or HttpRequestException
+      or IOException
+      or TaskCanceledException
+    || exception.InnerException is not null && IsStorageUnavailable(exception.InnerException);
+
+  public async Task<DownloadedMediaObject> DownloadAsync(
     string bucketName,
     string objectKey,
     CancellationToken cancellationToken = default  
@@ -61,7 +83,11 @@ public class SeaweedFileStorageService : IFileStorageService
       cancellationToken
     );
 
-    return response.ResponseStream;
+    return new DownloadedMediaObject(
+      response.ResponseStream,
+      response.Headers.ContentType,
+      response.Headers.ContentLength,
+      response.ETag);
   }
 
   public async Task DeleteAsync(
@@ -82,6 +108,11 @@ public class SeaweedFileStorageService : IFileStorageService
     CancellationToken cancellationToken = default
   )
   {
+    if (!_options.CreateBucket)
+    {
+      return;
+    }
+
     var buckets = await _s3.ListBucketsAsync(cancellationToken);
 
     var exists = buckets.Buckets.Any(b => b.BucketName == bucketName);

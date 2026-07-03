@@ -24,6 +24,7 @@ internal sealed class MediaService(
     IAuthApi auth, 
     IMediator mediator,
     IFileStorageService storage,
+    IMediaRealtimeNotifier realtime,
     IOptions<RabbitMqOptions> rabbitMqOptions,
     ILogger<MediaService> logger)
     : IMediaService
@@ -66,6 +67,114 @@ internal sealed class MediaService(
         return ToDto(item);
     }
 
+    public async Task<MediaObjectDownload> GetObjectAsync(
+        Guid id,
+        string variant,
+        CallerContext caller,
+        CancellationToken cancellationToken = default)
+    {
+        var item = await LoadLiveAsync(id, cancellationToken);
+        if (!await CanAccessAsync(item, caller, cancellationToken))
+        {
+            throw DomainException.Forbidden("You do not have access to this media item.");
+        }
+
+        var normalizedVariant = variant.Trim().ToLowerInvariant();
+        var storedObject = StoredObjectForVariant(item, normalizedVariant);
+        logger.LogInformation(
+            "[Media] Object request media {MediaId}, variant {Variant}, kind {Kind}, hasThumbnail {HasThumbnail}, hasCanonical {HasCanonical}, hasProxy {HasProxy}, hasRaw {HasRaw}, resolved {Resolved}.",
+            item.Id,
+            normalizedVariant,
+            item.Kind,
+            HasStoredObject(item.ThumbnailBucketName, item.ThumbnailStorageKey),
+            HasStoredObject(item.CanonicalBucketName, item.CanonicalStorageKey),
+            HasStoredObject(item.ProxyBucketName, item.ProxyStorageKey),
+            HasStoredObject(item.RawBucketName, item.RawStorageKey),
+            storedObject is not null);
+
+        if (storedObject is null)
+        {
+            logger.LogWarning(
+                "[Media] Object not found for media {MediaId}, variant {Variant}; no stored key resolved.",
+                item.Id,
+                normalizedVariant);
+            throw DomainException.NotFound("Media object not found.");
+        }
+
+        var (bucketName, objectKey) = storedObject.Value;
+
+        try
+        {
+            var downloaded = await storage.DownloadAsync(bucketName, objectKey, cancellationToken);
+            return new MediaObjectDownload(
+                downloaded.Stream,
+                NormalizeContentType(downloaded.ContentType, objectKey, item.Kind),
+                downloaded.ContentLength,
+                downloaded.ETag,
+                DownloadFileName(item.Filename, objectKey));
+        }
+        catch (Amazon.S3.AmazonS3Exception ex) when ((int)ex.StatusCode == StatusCodes.Status404NotFound
+            || string.Equals(ex.ErrorCode, "NoSuchKey", StringComparison.OrdinalIgnoreCase))
+        {
+            if (normalizedVariant == "thumbnail"
+                && item.Kind == MediaKind.Image
+                && IsThumbnailObject(item, bucketName, objectKey)
+                && CanonicalObject(item) is { } canonicalObject)
+            {
+                logger.LogWarning(
+                    ex,
+                    "[Media] Thumbnail object missing for image media {MediaId}, bucket {BucketName}, key {ObjectKey}; falling back to canonical object.",
+                    item.Id,
+                    bucketName,
+                    objectKey);
+
+                try
+                {
+                    var fallback = await storage.DownloadAsync(
+                        canonicalObject.BucketName,
+                        canonicalObject.ObjectKey,
+                        cancellationToken);
+                    return new MediaObjectDownload(
+                        fallback.Stream,
+                        NormalizeContentType(fallback.ContentType, canonicalObject.ObjectKey, item.Kind),
+                        fallback.ContentLength,
+                        fallback.ETag,
+                        DownloadFileName(item.Filename, canonicalObject.ObjectKey));
+                }
+                catch (Amazon.S3.AmazonS3Exception fallbackEx) when ((int)fallbackEx.StatusCode == StatusCodes.Status404NotFound
+                    || string.Equals(fallbackEx.ErrorCode, "NoSuchKey", StringComparison.OrdinalIgnoreCase))
+                {
+                    logger.LogWarning(
+                        fallbackEx,
+                        "[Media] Canonical fallback object missing for image media {MediaId}, bucket {BucketName}, key {ObjectKey}.",
+                        item.Id,
+                        canonicalObject.BucketName,
+                        canonicalObject.ObjectKey);
+                }
+            }
+
+            logger.LogWarning(
+                ex,
+                "[Media] Storage object missing for media {MediaId}, variant {Variant}, bucket {BucketName}, key {ObjectKey}.",
+                item.Id,
+                normalizedVariant,
+                bucketName,
+                objectKey);
+            throw DomainException.NotFound("Media object not found.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "[Media] Storage download failed for media {MediaId}, variant {Variant}, bucket {BucketName}, key {ObjectKey}.",
+                item.Id,
+                normalizedVariant,
+                bucketName,
+                objectKey);
+            throw;
+        }
+    }
+
     public async Task<MediaDto> UploadRawAsync(
         WorkspaceScope scope, 
         CallerContext caller, 
@@ -90,6 +199,7 @@ internal sealed class MediaService(
         ValidateKindMatchesFile(request.Kind, request.File);
 
         var mediaId = Guid.NewGuid();
+        var filename = NormalizeUploadFilename(request.Filename, request.File.FileName);
 
         StoredMediaObject? storedObject = null;
 
@@ -112,7 +222,7 @@ internal sealed class MediaService(
                     FrameRate = 0,
                     OwnerId = scope.OwnerId,
                     OwnerKind = OwnerKindOf(scope),
-                    Filename = Path.GetFileName(request.File.FileName).Trim(),
+                    Filename = filename,
                     StorageKey = storedObject.ObjectKey,
                     RawBucketName = storedObject.BucketName,
                     RawStorageKey = storedObject.ObjectKey,
@@ -126,7 +236,7 @@ internal sealed class MediaService(
                     DurationSeconds = 0,
                     OwnerId = scope.OwnerId,
                     OwnerKind = OwnerKindOf(scope),
-                    Filename = Path.GetFileName(request.File.FileName).Trim(),
+                    Filename = filename,
                     StorageKey = storedObject.ObjectKey,
                     RawBucketName = storedObject.BucketName,
                     RawStorageKey = storedObject.ObjectKey,
@@ -141,7 +251,7 @@ internal sealed class MediaService(
                     Height = 0,
                     OwnerId = scope.OwnerId,
                     OwnerKind = OwnerKindOf(scope),
-                    Filename = Path.GetFileName(request.File.FileName).Trim(),
+                    Filename = filename,
                     StorageKey = storedObject.ObjectKey,
                     RawBucketName = storedObject.BucketName,
                     RawStorageKey = storedObject.ObjectKey,
@@ -177,7 +287,10 @@ internal sealed class MediaService(
                 cancellationToken);
             await media.SaveChangesAsync(cancellationToken);
 
-            return ToDto(item);
+            var dto = ToDto(item);
+            await realtime.MediaUpdatedAsync(item, dto, "uploaded", cancellationToken);
+
+            return dto;
         }
         catch
         {
@@ -203,15 +316,22 @@ internal sealed class MediaService(
             return;
         }
 
-        if (item.Status == MediaStatus.Ready
-            && item.CanonicalStorageKey == completed.Canonical?.ObjectKey)
-        {
-            return;
-        }
-
         if (completed.Canonical is not { } canonical)
         {
             throw DomainException.BadRequest("Optimization completion missing canonical object.");
+        }
+
+        if (item.Status == MediaStatus.Ready)
+        {
+            if (item.CanonicalStorageKey != canonical.ObjectKey)
+            {
+                logger.LogWarning(
+                    "[Media] Ignoring optimization completion for already-ready media {MediaId} with canonical object {CanonicalObjectKey}.",
+                    item.Id,
+                    canonical.ObjectKey);
+            }
+
+            return;
         }
 
         item.CanonicalBucketName = canonical.BucketName;
@@ -228,7 +348,9 @@ internal sealed class MediaService(
 
         item.StorageKey = canonical.ObjectKey;
         item.SizeBytes = canonical.SizeBytes;
-        item.Status = MediaStatus.Processing;
+        item.Status = item.Kind == MediaKind.Video
+            ? MediaStatus.Processing
+            : MediaStatus.Ready;
         item.ErrorMessage = null;
         item.Codec = completed.Codec;
         item.UpdatedAt = DateTimeOffset.UtcNow;
@@ -269,33 +391,42 @@ internal sealed class MediaService(
             }
         }
 
-        var ingestionEvent = new IngestionRequestedEvent(
-            EventId: Guid.NewGuid(),
-            EventType: "ingestion.requested",
-            OccurredAt: DateTimeOffset.UtcNow,
-            MediaId: item.Id,
-            OwnerId: item.OwnerId,
-            OwnerKind: item.OwnerKind,
-            Kind: item.Kind,
-            Canonical: canonical,
-            Proxy: completed.Proxy,
-            Thumbnail: completed.Thumbnail,
-            DurationSeconds: completed.DurationSeconds,
-            Width: completed.Width,
-            Height: completed.Height,
-            FrameRate: completed.FrameRate,
-            Codec: completed.Codec
-        );
+        if (item.Kind == MediaKind.Video)
+        {
+            var ingestionEvent = new IngestionRequestedEvent(
+                EventId: Guid.NewGuid(),
+                EventType: "ingestion.requested",
+                OccurredAt: DateTimeOffset.UtcNow,
+                MediaId: item.Id,
+                OwnerId: item.OwnerId,
+                OwnerKind: item.OwnerKind,
+                Kind: item.Kind,
+                Canonical: canonical,
+                Proxy: completed.Proxy,
+                Thumbnail: completed.Thumbnail,
+                DurationSeconds: completed.DurationSeconds,
+                Width: completed.Width,
+                Height: completed.Height,
+                FrameRate: completed.FrameRate,
+                Codec: completed.Codec
+            );
 
-        await media.EnqueueOutboxAsync(
-            OutboxMessage.Create(
-                dedupeKey: $"ingestion.requested:{completed.EventId}",
-                exchange: rabbitMqOptions.Value.ExchangeName,
-                routingKey: "ingestion.requested",
-                eventType: ingestionEvent.EventType,
-                payload: ingestionEvent),
-            cancellationToken);
+            await media.EnqueueOutboxAsync(
+                OutboxMessage.Create(
+                    dedupeKey: $"ingestion.requested:{item.Id}",
+                    exchange: rabbitMqOptions.Value.ExchangeName,
+                    routingKey: "ingestion.requested",
+                    eventType: ingestionEvent.EventType,
+                    payload: ingestionEvent),
+                cancellationToken);
+        }
+
         await media.SaveChangesAsync(cancellationToken);
+        await realtime.MediaUpdatedAsync(
+            item,
+            ToDto(item),
+            item.Kind == MediaKind.Video ? "processing" : "ready",
+            cancellationToken);
     }
 
     public async Task HandleOptimizationFailedAsync(
@@ -308,12 +439,24 @@ internal sealed class MediaService(
             return;
         }
 
+        if (item.Status is MediaStatus.Processing or MediaStatus.Ready)
+        {
+            return;
+        }
+
         item.Status = MediaStatus.Failed;
         item.ErrorMessage = string.IsNullOrWhiteSpace(failed.ErrorMessage)
             ? failed.ErrorCode
             : failed.ErrorMessage;
         item.UpdatedAt = DateTimeOffset.UtcNow;
         await media.SaveChangesAsync(cancellationToken);
+        await realtime.MediaUpdatedAsync(
+            item,
+            ToDto(item),
+            "failed",
+            cancellationToken,
+            errorCode: failed.ErrorCode,
+            errorMessage: item.ErrorMessage);
     }
 
     public async Task HandleIngestionCompletedAsync(
@@ -335,6 +478,12 @@ internal sealed class MediaService(
         item.ErrorMessage = null;
         item.UpdatedAt = DateTimeOffset.UtcNow;
         await media.SaveChangesAsync(cancellationToken);
+        await realtime.MediaUpdatedAsync(
+            item,
+            ToDto(item),
+            "ready",
+            cancellationToken,
+            shotCount: completed.ShotCount);
     }
 
     public async Task HandleIngestionFailedAsync(
@@ -347,12 +496,24 @@ internal sealed class MediaService(
             return;
         }
 
+        if (item.Status == MediaStatus.Ready)
+        {
+            return;
+        }
+
         item.Status = MediaStatus.Failed;
         item.ErrorMessage = string.IsNullOrWhiteSpace(failed.ErrorMessage)
             ? failed.ErrorCode
             : failed.ErrorMessage;
         item.UpdatedAt = DateTimeOffset.UtcNow;
         await media.SaveChangesAsync(cancellationToken);
+        await realtime.MediaUpdatedAsync(
+            item,
+            ToDto(item),
+            "failed",
+            cancellationToken,
+            errorCode: failed.ErrorCode,
+            errorMessage: item.ErrorMessage);
     }
 
     public async Task ShareAsync(
@@ -471,6 +632,42 @@ internal sealed class MediaService(
         }
     }
 
+    private static string NormalizeUploadFilename(string? requestedFilename, string uploadedFilename)
+    {
+        var fallback = SafeFileName(uploadedFilename);
+        var candidate = string.IsNullOrWhiteSpace(requestedFilename)
+            ? fallback
+            : SafeFileName(requestedFilename);
+
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            throw DomainException.BadRequest("Filename is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(Path.GetExtension(candidate)))
+        {
+            candidate += Path.GetExtension(fallback);
+        }
+
+        return candidate.Length <= 512 ? candidate : candidate[..512];
+    }
+
+    private static string SafeFileName(string value)
+    {
+        var name = Path.GetFileName(value).Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return string.Empty;
+        }
+
+        foreach (var invalid in Path.GetInvalidFileNameChars())
+        {
+            name = name.Replace(invalid, '_');
+        }
+
+        return name;
+    }
+
     private static void ApplyOptimizationMetadata(
         Models.Media item,
         MediaOptimizationCompletedEvent completed)
@@ -518,6 +715,92 @@ internal sealed class MediaService(
         {
             yield return (thumbnailBucket, thumbnailKey);
         }
+    }
+
+    private static (string BucketName, string ObjectKey)? StoredObjectForVariant(Models.Media item, string variant)
+    {
+        return variant switch
+        {
+            "thumbnail" when item.ThumbnailBucketName is { Length: > 0 } thumbnailBucket
+                && item.ThumbnailStorageKey is { Length: > 0 } thumbnailKey
+                => (thumbnailBucket, thumbnailKey),
+            "thumbnail" when item.Kind == MediaKind.Image
+                && item.CanonicalBucketName is { Length: > 0 } canonicalBucket
+                && item.CanonicalStorageKey is { Length: > 0 } canonicalKey
+                => (canonicalBucket, canonicalKey),
+            "canonical" when item.CanonicalBucketName is { Length: > 0 } canonicalBucket
+                && item.CanonicalStorageKey is { Length: > 0 } canonicalKey
+                => (canonicalBucket, canonicalKey),
+            "proxy" when item.ProxyBucketName is { Length: > 0 } proxyBucket
+                && item.ProxyStorageKey is { Length: > 0 } proxyKey
+                => (proxyBucket, proxyKey),
+            "raw" when item.RawBucketName is { Length: > 0 } rawBucket
+                && item.RawStorageKey is { Length: > 0 } rawKey
+                => (rawBucket, rawKey),
+            _ => null
+        };
+    }
+
+    private static bool HasStoredObject(string? bucketName, string? objectKey) =>
+        bucketName is { Length: > 0 } && objectKey is { Length: > 0 };
+
+    private static bool IsThumbnailObject(Models.Media item, string bucketName, string objectKey) =>
+        string.Equals(item.ThumbnailBucketName, bucketName, StringComparison.Ordinal)
+        && string.Equals(item.ThumbnailStorageKey, objectKey, StringComparison.Ordinal);
+
+    private static (string BucketName, string ObjectKey)? CanonicalObject(Models.Media item) =>
+        item.CanonicalBucketName is { Length: > 0 } canonicalBucket
+            && item.CanonicalStorageKey is { Length: > 0 } canonicalKey
+            ? (canonicalBucket, canonicalKey)
+            : null;
+
+    private static string NormalizeContentType(string? storedContentType, string objectKey, MediaKind kind)
+    {
+        if (!string.IsNullOrWhiteSpace(storedContentType)
+            && !string.Equals(storedContentType, "application/octet-stream", StringComparison.OrdinalIgnoreCase))
+        {
+            return storedContentType;
+        }
+
+        return ContentTypeForObject(objectKey, kind);
+    }
+
+    private static string ContentTypeForObject(string objectKey, MediaKind kind)
+    {
+        return Path.GetExtension(objectKey).ToLowerInvariant() switch
+        {
+            ".webp" => "image/webp",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".gif" => "image/gif",
+            ".mp4" => "video/mp4",
+            ".webm" => "video/webm",
+            ".mov" => "video/quicktime",
+            ".mp3" => "audio/mpeg",
+            ".m4a" => "audio/mp4",
+            ".opus" => "audio/opus",
+            ".wav" => "audio/wav",
+            ".ogg" => "audio/ogg",
+            _ => kind switch
+            {
+                MediaKind.Image => "image/webp",
+                MediaKind.Video => "video/mp4",
+                MediaKind.Audio => "audio/mpeg",
+                _ => "application/octet-stream"
+            }
+        };
+    }
+
+    private static string DownloadFileName(string filename, string objectKey)
+    {
+        var baseName = Path.GetFileNameWithoutExtension(SafeFileName(filename));
+        if (string.IsNullOrWhiteSpace(baseName))
+        {
+            baseName = "media";
+        }
+
+        var extension = Path.GetExtension(objectKey);
+        return $"{baseName}{extension}";
     }
 
     private async Task<Models.Media> LoadLiveAsync(Guid id, CancellationToken cancellationToken)
@@ -599,7 +882,61 @@ internal sealed class MediaService(
             height,
             m.Codec,
             frameRate,
-            m.CreatedAt);
+            m.CreatedAt,
+            ToPipelineDto(m));
+    }
+
+    private static MediaPipelineDto ToPipelineDto(Models.Media m)
+    {
+        return m.Status switch
+        {
+            MediaStatus.Queued => new MediaPipelineDto(
+                "queued",
+                "Queued",
+                "Waiting to start processing.",
+                1,
+                4,
+                false),
+            MediaStatus.Uploaded => new MediaPipelineDto(
+                "optimizing",
+                "Optimizing media",
+                "Upload saved. Kuvox is generating optimized media and previews.",
+                2,
+                4,
+                false),
+            MediaStatus.Processing => new MediaPipelineDto(
+                m.Kind == MediaKind.Video ? "ingesting" : "optimizing",
+                m.Kind == MediaKind.Video ? "Analyzing video" : "Optimizing media",
+                m.Kind == MediaKind.Video
+                    ? "Optimized media is ready. Kuvox is indexing shots and AI context."
+                    : "Kuvox is finalizing optimized media.",
+                3,
+                4,
+                false),
+            MediaStatus.Ready => new MediaPipelineDto(
+                "ready",
+                "Ready to edit",
+                "Import and processing completed.",
+                4,
+                4,
+                true),
+            MediaStatus.Failed => new MediaPipelineDto(
+                "failed",
+                "Import failed",
+                string.IsNullOrWhiteSpace(m.ErrorMessage)
+                    ? "Kuvox could not finish importing this file."
+                    : m.ErrorMessage,
+                4,
+                4,
+                true),
+            _ => new MediaPipelineDto(
+                m.Status.ToString().ToLowerInvariant(),
+                m.Status.ToString(),
+                "Import status is being updated.",
+                1,
+                4,
+                false)
+        };
     }
 
     private static MediaTrashItemDto ToTrashDto(Models.Media m)
