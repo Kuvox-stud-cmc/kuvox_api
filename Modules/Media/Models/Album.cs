@@ -5,6 +5,11 @@ namespace Kuvox.Api.Modules.Media.Models;
 
 public sealed class Album : BaseEntity
 {
+  /// <summary>Owning workspace id (user or studio); see <see cref="OwnerKind"/>.</summary>
+  public required Guid OwnerId { get; set; }
+
+  public required OwnerKind OwnerKind { get; set; }
+
   public required string Name { get; set; }
   
   public required string Description { get; set; }

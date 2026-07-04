@@ -11,8 +11,17 @@ internal sealed class AlbumService(
     IAlbumRepository albumRepository,
     IMediaRepository mediaRepository) : IAlbumService
 {
-    public async Task<AlbumDto> CreateAlbumAsync(CreateAlbumDto request, Guid userId, CancellationToken cancellationToken = default)
+    public async Task<AlbumDto> CreateAlbumAsync(
+        WorkspaceScope scope,
+        CallerContext caller,
+        CreateAlbumDto request,
+        CancellationToken cancellationToken = default)
     {
+        if (scope.IsStudio && !caller.CanWriteStudioContent(scope.OwnerId))
+        {
+            throw DomainException.Forbidden("You do not have permission to create Studio albums.");
+        }
+
         if (request.Kind == AlbumKind.Audio && TryGetReservedAudioCategory(request.Name) is not null)
         {
             throw DomainException.BadRequest("This audio category name is reserved.");
@@ -20,6 +29,8 @@ internal sealed class AlbumService(
 
         var album = new Album
         {
+            OwnerId = scope.OwnerId,
+            OwnerKind = OwnerKindOf(scope),
             Name = request.Name,
             Description = request.Description,
             Kind = request.Kind,
@@ -28,87 +39,103 @@ internal sealed class AlbumService(
         };
 
         albumRepository.Add(album);
-        
-        var albumUser = new AlbumUser
+
+        if (!scope.IsStudio)
         {
-            AlbumId = album.Id,
-            UserId = userId,
-            Role = Permission.Owner,
-            IsFavorite = false
-        };
-        
-        albumRepository.AddAlbumUser(albumUser);
+            var albumUser = new AlbumUser
+            {
+                AlbumId = album.Id,
+                UserId = caller.UserId,
+                Role = Permission.Owner,
+                IsFavorite = false
+            };
+            albumRepository.AddAlbumUser(albumUser);
+        }
+
         await albumRepository.SaveChangesAsync(cancellationToken);
 
-        return ToDto(album, albumUser.IsFavorite);
+        return ToDto(album, false);
     }
 
-    public async Task DeleteAlbumAsync(Guid albumId, Guid userId, CancellationToken cancellationToken = default)
+    public async Task DeleteAlbumAsync(WorkspaceScope? scope, Guid albumId, CallerContext caller, CancellationToken cancellationToken = default)
     {
         var album = await albumRepository.GetByIdAsync(albumId, cancellationToken)
             ?? throw DomainException.NotFound("Album not found");
 
+        RequireAlbumInWorkspace(scope, album);
+
         if (!album.IsDeleteAble) throw DomainException.Forbidden("This album is created as default, so you can't delete this album");
 
-        var albumUser = await albumRepository.GetAlbumUserAsync(albumId, userId, cancellationToken)
-            ?? throw DomainException.Forbidden("You do not have access to this album");
+        if (album.OwnerKind == OwnerKind.User)
+        {
+            var albumUser = await albumRepository.GetAlbumUserAsync(albumId, caller.UserId, cancellationToken)
+                ?? throw DomainException.Forbidden("You do not have access to this album");
 
-        if (albumUser.Role != Permission.Owner)
-            throw DomainException.Forbidden("Only the owner can delete the album");
+            if (albumUser.Role != Permission.Owner)
+            {
+                throw DomainException.Forbidden("Only the owner can delete the album");
+            }
+        }
+        else
+        {
+            await RequireWriteAsync(album, caller, cancellationToken);
+        }
 
         albumRepository.Remove(album);
         await albumRepository.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task AddMediaToAlbumAsync(Guid albumId, IEnumerable<Guid> mediaIds, Guid userId, CancellationToken cancellationToken = default)
+    public async Task AddMediaToAlbumAsync(WorkspaceScope? scope, Guid albumId, IEnumerable<Guid> mediaIds, CallerContext caller, CancellationToken cancellationToken = default)
     {
         var album = await albumRepository.GetByIdAsync(albumId, cancellationToken)
             ?? throw DomainException.NotFound("Album not found");
+
+        RequireAlbumInWorkspace(scope, album);
 
         if (!album.IsDeleteAble)
         {
             throw DomainException.NotFound("Album not found");
         }
 
-        var albumUser = await albumRepository.GetAlbumUserAsync(albumId, userId, cancellationToken)
-            ?? throw DomainException.Forbidden("You do not have access to this album");
+        await RequireWriteAsync(album, caller, cancellationToken);
 
-        if (albumUser.Role is not Permission.Owner and not Permission.Editor)
-            throw DomainException.Forbidden("You do not have permission to add media to this album");
-
-        await AddMediaToAlbumCoreAsync(album, mediaIds, cancellationToken);
+        await AddMediaToAlbumCoreAsync(album, mediaIds, caller, cancellationToken);
         await albumRepository.SaveChangesAsync(cancellationToken);
     }
 
     public async Task AssignAudioCategoryAsync(
+        WorkspaceScope scope,
+        CallerContext caller,
         string category,
         IEnumerable<Guid> mediaIds,
-        Guid userId,
         CancellationToken cancellationToken = default)
     {
+        if (scope.IsStudio && !caller.CanWriteStudioContent(scope.OwnerId))
+        {
+            throw DomainException.Forbidden("You do not have permission to update Studio audio categories.");
+        }
+
         var categoryKey = TryGetReservedAudioCategory(category)
             ?? throw DomainException.BadRequest("Choose a valid audio category.");
 
-        var album = await GetOrCreateSystemAudioCategoryAlbumAsync(userId, categoryKey, cancellationToken);
-        await AddMediaToAlbumCoreAsync(album, mediaIds, cancellationToken);
+        var album = await GetOrCreateSystemAudioCategoryAlbumAsync(scope, caller, categoryKey, cancellationToken);
+        await AddMediaToAlbumCoreAsync(album, mediaIds, caller, cancellationToken);
         await albumRepository.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task DeleteMediaFromAlbumAsync(Guid albumId, IEnumerable<Guid> mediaIds, Guid userId, CancellationToken cancellationToken = default)
+    public async Task DeleteMediaFromAlbumAsync(WorkspaceScope? scope, Guid albumId, IEnumerable<Guid> mediaIds, CallerContext caller, CancellationToken cancellationToken = default)
     {
         var album = await albumRepository.GetByIdAsync(albumId, cancellationToken)
             ?? throw DomainException.NotFound("Album not found");
+
+        RequireAlbumInWorkspace(scope, album);
 
         if (!album.IsDeleteAble)
         {
             throw DomainException.NotFound("Album not found");
         }
 
-        var albumUser = await albumRepository.GetAlbumUserAsync(albumId, userId, cancellationToken)
-            ?? throw DomainException.Forbidden("You do not have access to this album");
-
-        if (albumUser.Role is not Permission.Owner and not Permission.Editor)
-            throw DomainException.Forbidden("You do not have permission to remove media from this album");
+        await RequireWriteAsync(album, caller, cancellationToken);
 
         foreach (var mediaId in mediaIds.Distinct())
         {
@@ -122,9 +149,12 @@ internal sealed class AlbumService(
         await albumRepository.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<AlbumDto>> ListAlbumsAsync(Guid userId, bool includeSystem = false, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<AlbumDto>> ListAlbumsAsync(WorkspaceScope scope, CallerContext caller, bool includeSystem = false, CancellationToken cancellationToken = default)
     {
-        var albums = await albumRepository.ListByUserAsync(userId, includeSystem, cancellationToken);
+        var albums = await albumRepository.ListByWorkspaceAsync(OwnerKindOf(scope), scope.OwnerId, caller.UserId, includeSystem, cancellationToken);
+        albums = albums
+            .Where(album => album.OwnerKind == OwnerKindOf(scope) && album.OwnerId == scope.OwnerId)
+            .ToList();
         if (!includeSystem)
         {
             albums = albums
@@ -132,22 +162,25 @@ internal sealed class AlbumService(
                 .ToList();
         }
 
-        var flags = await albumRepository.GetFavoriteFlagsAsync(albums.Select(album => album.Id), userId, cancellationToken);
+        var flags = scope.IsStudio
+            ? new Dictionary<Guid, bool>()
+            : await albumRepository.GetFavoriteFlagsAsync(albums.Select(album => album.Id), caller.UserId, cancellationToken);
         return albums.Select(album => ToDto(album, flags.GetValueOrDefault(album.Id))).ToList();
     }
 
-    public async Task<PagedResult<MediaDto>> ListAlbumMediaAsync(Guid albumId, Guid userId, bool includeSystem = false, CancellationToken cancellationToken = default)
+    public async Task<PagedResult<MediaDto>> ListAlbumMediaAsync(WorkspaceScope? scope, Guid albumId, CallerContext caller, bool includeSystem = false, CancellationToken cancellationToken = default)
     {
         var album = await albumRepository.GetByIdAsync(albumId, cancellationToken)
             ?? throw DomainException.NotFound("Album not found");
+
+        RequireAlbumInWorkspace(scope, album);
 
         if (!includeSystem && !album.IsDeleteAble)
         {
             throw DomainException.NotFound("Album not found");
         }
 
-        var albumUser = await albumRepository.GetAlbumUserAsync(albumId, userId, cancellationToken)
-            ?? throw DomainException.Forbidden("You do not have access to this album");
+        await RequireReadAsync(album, caller, cancellationToken);
 
         var media = await albumRepository.ListAlbumMediaAsync(albumId, cancellationToken);
         var dtos = media.Select(item => MediaService.ToDto(item)).ToList();
@@ -158,7 +191,7 @@ internal sealed class AlbumService(
 
     public async Task<AlbumDto> SetFavoriteAsync(
         Guid albumId,
-        Guid userId,
+        CallerContext caller,
         ToggleAlbumFavoriteRequest request,
         CancellationToken cancellationToken = default)
     {
@@ -170,7 +203,12 @@ internal sealed class AlbumService(
             throw DomainException.NotFound("Album not found");
         }
 
-        var albumUser = await albumRepository.GetAlbumUserAsync(albumId, userId, cancellationToken)
+        if (album.OwnerKind != OwnerKind.User)
+        {
+            throw DomainException.Forbidden("Studio album favorites are not available yet.");
+        }
+
+        var albumUser = await albumRepository.GetAlbumUserAsync(albumId, caller.UserId, cancellationToken)
             ?? throw DomainException.Forbidden("You do not have access to this album");
 
         if (albumUser.IsFavorite != request.IsFavorite)
@@ -184,11 +222,12 @@ internal sealed class AlbumService(
     }
 
     private static AlbumDto ToDto(Album album, bool isFavorite) =>
-        new(album.Id, album.Name, album.Description, album.Kind, album.MaterialSymbol, album.IsDeleteAble, isFavorite);
+        new(album.Id, album.OwnerId, album.OwnerKind, album.Name, album.Description, album.Kind, album.MaterialSymbol, album.IsDeleteAble, isFavorite);
 
     private async Task AddMediaToAlbumCoreAsync(
         Album album,
         IEnumerable<Guid> mediaIds,
+        CallerContext caller,
         CancellationToken cancellationToken)
     {
         foreach (var mediaId in mediaIds.Distinct())
@@ -200,6 +239,8 @@ internal sealed class AlbumService(
             {
                 throw DomainException.NotFound($"Media {mediaId} not found");
             }
+
+            await RequireMediaAllowedInAlbumAsync(album, media, caller, cancellationToken);
 
             if (album.Kind == AlbumKind.Photo && media is not Photo)
                 throw DomainException.BadRequest("Cannot add non-photo media to a Photo Album");
@@ -223,12 +264,83 @@ internal sealed class AlbumService(
         }
     }
 
+    private async Task RequireReadAsync(Album album, CallerContext caller, CancellationToken cancellationToken)
+    {
+        if (album.OwnerKind == OwnerKind.Studio)
+        {
+            if (!caller.InStudio(album.OwnerId))
+            {
+                throw DomainException.Forbidden("You do not have access to this Studio album.");
+            }
+
+            return;
+        }
+
+        _ = await albumRepository.GetAlbumUserAsync(album.Id, caller.UserId, cancellationToken)
+            ?? throw DomainException.Forbidden("You do not have access to this album");
+    }
+
+    private async Task RequireWriteAsync(Album album, CallerContext caller, CancellationToken cancellationToken)
+    {
+        if (album.OwnerKind == OwnerKind.Studio)
+        {
+            if (!caller.CanWriteStudioContent(album.OwnerId))
+            {
+                throw DomainException.Forbidden("You do not have permission to modify this Studio album.");
+            }
+
+            return;
+        }
+
+        var albumUser = await albumRepository.GetAlbumUserAsync(album.Id, caller.UserId, cancellationToken)
+            ?? throw DomainException.Forbidden("You do not have access to this album");
+
+        if (albumUser.Role is not Permission.Owner and not Permission.Editor)
+        {
+            throw DomainException.Forbidden("You do not have permission to modify this album");
+        }
+    }
+
+    private async Task RequireMediaAllowedInAlbumAsync(
+        Album album,
+        Models.Media media,
+        CallerContext caller,
+        CancellationToken cancellationToken)
+    {
+        if (album.OwnerKind == OwnerKind.Studio)
+        {
+            if (media.OwnerKind != OwnerKind.Studio || media.OwnerId != album.OwnerId)
+            {
+                throw DomainException.BadRequest("Studio albums can only contain media from the same Studio.");
+            }
+
+            return;
+        }
+
+        if (media.OwnerKind != OwnerKind.User)
+        {
+            throw DomainException.BadRequest("Personal albums can only contain personal media.");
+        }
+
+        if (caller.OwnsAsUser(media.OwnerId))
+        {
+            return;
+        }
+
+        if (await mediaRepository.GetMediaUserAsync(media.Id, caller.UserId, cancellationToken) is null)
+        {
+            throw DomainException.Forbidden("You do not have access to this media item.");
+        }
+    }
+
     private async Task<Album> GetOrCreateSystemAudioCategoryAlbumAsync(
-        Guid userId,
+        WorkspaceScope scope,
+        CallerContext caller,
         AudioCategory category,
         CancellationToken cancellationToken)
     {
-        var albums = await albumRepository.ListByUserAsync(userId, includeSystem: true, cancellationToken);
+        var ownerKind = OwnerKindOf(scope);
+        var albums = await albumRepository.ListByWorkspaceAsync(ownerKind, scope.OwnerId, caller.UserId, includeSystem: true, cancellationToken);
         var existing = albums
             .Where(album =>
                 album.Kind == AlbumKind.Audio
@@ -245,6 +357,8 @@ internal sealed class AlbumService(
         var definition = DefinitionFor(category);
         var album = new Album
         {
+            OwnerId = scope.OwnerId,
+            OwnerKind = ownerKind,
             Name = definition.Name,
             Description = definition.Description,
             Kind = AlbumKind.Audio,
@@ -253,15 +367,35 @@ internal sealed class AlbumService(
         };
 
         albumRepository.Add(album);
-        albumRepository.AddAlbumUser(new AlbumUser
+
+        if (!scope.IsStudio)
         {
-            AlbumId = album.Id,
-            UserId = userId,
-            Role = Permission.Owner,
-            IsFavorite = false
-        });
+            albumRepository.AddAlbumUser(new AlbumUser
+            {
+                AlbumId = album.Id,
+                UserId = caller.UserId,
+                Role = Permission.Owner,
+                IsFavorite = false
+            });
+        }
 
         return album;
+    }
+
+    private static OwnerKind OwnerKindOf(WorkspaceScope scope) => scope.IsStudio ? OwnerKind.Studio : OwnerKind.User;
+
+    private static void RequireAlbumInWorkspace(WorkspaceScope? scope, Album album)
+    {
+        if (scope is null)
+        {
+            return;
+        }
+
+        var ownerKind = OwnerKindOf(scope);
+        if (album.OwnerKind != ownerKind || album.OwnerId != scope.OwnerId)
+        {
+            throw DomainException.NotFound("Album not found");
+        }
     }
 
     private static AudioCategory? TryGetReservedAudioCategory(string value)

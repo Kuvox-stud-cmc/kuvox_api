@@ -1,4 +1,5 @@
 using Kuvox.Api.Modules.Media.Models;
+using Kuvox.Api.Modules.Media.Enums;
 
 namespace Kuvox.Api.Modules.Media.Repositories;
 
@@ -7,6 +8,9 @@ internal interface IAlbumRepository
     Task<Album?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<Album>> ListByUserAsync(Guid userId, bool includeSystem = false, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<Album>> ListByWorkspaceAsync(
+        OwnerKind ownerKind, Guid ownerId, Guid userId, bool includeSystem = false, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<Models.Media>> ListAlbumMediaAsync(Guid albumId, CancellationToken cancellationToken = default);
 

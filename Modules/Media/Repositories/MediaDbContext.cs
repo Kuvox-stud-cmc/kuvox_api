@@ -136,11 +136,13 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
         {
             entity.ToTable("albums");
             entity.HasKey(a => a.Id);
+            entity.Property(a => a.OwnerKind).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(a => a.Name).HasMaxLength(256).IsRequired();
             entity.Property(a => a.Description).HasMaxLength(1024).IsRequired();
             entity.Property(a => a.Kind).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(a => a.MaterialSymbol).HasMaxLength(64).IsRequired();
             entity.Property(a => a.IsDeleteAble).IsRequired();
+            entity.HasIndex(a => new { a.OwnerKind, a.OwnerId });
         });
 
         modelBuilder.Entity<Models.AlbumUser>(entity =>

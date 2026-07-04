@@ -1,4 +1,5 @@
 using Kuvox.Api.Modules.Media.Models;
+using Kuvox.Api.Modules.Media.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace Kuvox.Api.Modules.Media.Repositories;
@@ -13,7 +14,34 @@ internal sealed class AlbumRepository(MediaDbContext db) : IAlbumRepository
         return await (
             from au in db.AlbumUsers
             join a in db.Albums on au.AlbumId equals a.Id
-            where au.UserId == userId && (includeSystem || a.IsDeleteAble)
+            where au.UserId == userId && a.OwnerKind == OwnerKind.User && (includeSystem || a.IsDeleteAble)
+            orderby a.CreatedAt descending
+            select a
+        ).ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Album>> ListByWorkspaceAsync(
+        OwnerKind ownerKind,
+        Guid ownerId,
+        Guid userId,
+        bool includeSystem = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (ownerKind == OwnerKind.Studio)
+        {
+            return await db.Albums
+                .Where(a => a.OwnerKind == ownerKind && a.OwnerId == ownerId && (includeSystem || a.IsDeleteAble))
+                .OrderByDescending(a => a.CreatedAt)
+                .ToListAsync(cancellationToken);
+        }
+
+        return await (
+            from au in db.AlbumUsers
+            join a in db.Albums on au.AlbumId equals a.Id
+            where au.UserId == userId
+                && a.OwnerKind == ownerKind
+                && a.OwnerId == ownerId
+                && (includeSystem || a.IsDeleteAble)
             orderby a.CreatedAt descending
             select a
         ).ToListAsync(cancellationToken);

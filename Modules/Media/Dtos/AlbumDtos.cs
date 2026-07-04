@@ -4,6 +4,8 @@ namespace Kuvox.Api.Modules.Media.Dtos;
 
 public sealed record AlbumDto(
     Guid Id,
+    Guid OwnerId,
+    OwnerKind OwnerKind,
     string Name,
     string Description,
     AlbumKind Kind,

@@ -14,6 +14,8 @@ internal sealed class UserRegisteredHandler(IAlbumRepository albumRepo) : INotif
     {
       new Album
       {
+        OwnerId = notification.UserId,
+        OwnerKind = OwnerKind.User,
         Name = "Music",
         Description = "Default Audio Album - Music",
         Kind = AlbumKind.Audio,
@@ -22,6 +24,8 @@ internal sealed class UserRegisteredHandler(IAlbumRepository albumRepo) : INotif
       },
       new Album
       {
+        OwnerId = notification.UserId,
+        OwnerKind = OwnerKind.User,
         Name = "Sound Effects",
         Description = "Default Audio Album - Sound Effects",
         Kind = AlbumKind.Audio,
@@ -30,6 +34,8 @@ internal sealed class UserRegisteredHandler(IAlbumRepository albumRepo) : INotif
       },
       new Album
       {
+        OwnerId = notification.UserId,
+        OwnerKind = OwnerKind.User,
         Name = "Voiceover",
         Description = "Default Audio Album - Voiceover",
         Kind = AlbumKind.Audio,
