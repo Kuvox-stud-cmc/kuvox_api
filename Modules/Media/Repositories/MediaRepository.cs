@@ -2,6 +2,7 @@ using Kuvox.Api.Modules.Media.Enums;
 using Kuvox.Api.Modules.Media.Models;
 using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Kuvox.Api.Modules.Media.Repositories;
 
@@ -77,6 +78,42 @@ internal sealed class MediaRepository(MediaDbContext db) : IMediaRepository
             .Take(batchSize)
             .ToListAsync(cancellationToken);
 
+    public async Task<MediaStorageUsageSummary> GetStorageUsageAsync(
+        OwnerKind ownerKind,
+        Guid ownerId,
+        CancellationToken cancellationToken = default)
+    {
+        var owned = db.Media.Where(m => m.OwnerKind == ownerKind && m.OwnerId == ownerId);
+        var total = await AggregateStorageAsync(owned, cancellationToken);
+        var trash = await AggregateStorageAsync(owned.Where(m => m.DeletedAt != null), cancellationToken);
+
+        return new MediaStorageUsageSummary(
+            total.MediaCount,
+            total.RawBytes,
+            total.CanonicalBytes,
+            total.ProxyBytes,
+            total.ThumbnailBytes,
+            trash.MediaCount,
+            trash.RawBytes,
+            trash.CanonicalBytes,
+            trash.ProxyBytes,
+            trash.ThumbnailBytes);
+    }
+
+    public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default) =>
+        db.Database.BeginTransactionAsync(cancellationToken);
+
+    public Task AcquireStorageQuotaLockAsync(
+        OwnerKind ownerKind,
+        Guid ownerId,
+        CancellationToken cancellationToken = default)
+    {
+        var lockKey = $"{ownerKind}:{ownerId:N}";
+        return db.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))",
+            cancellationToken);
+    }
+
     public Task<MediaUser?> GetMediaUserAsync(Guid mediaId, Guid userId, CancellationToken cancellationToken = default) =>
         db.MediaUsers.FirstOrDefaultAsync(mu => mu.MediaId == mediaId && mu.UserId == userId, cancellationToken);
 
@@ -149,4 +186,30 @@ internal sealed class MediaRepository(MediaDbContext db) : IMediaRepository
 
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);
+
+    private static async Task<StorageAggregate> AggregateStorageAsync(
+        IQueryable<Models.Media> query,
+        CancellationToken cancellationToken)
+    {
+        return await query
+            .GroupBy(_ => 1)
+            .Select(g => new StorageAggregate(
+                g.Count(),
+                g.Sum(m => m.RawStorageKey != null ? m.RawSizeBytes : 0L) ?? 0L,
+                g.Sum(m => m.CanonicalStorageKey != null ? m.CanonicalSizeBytes : 0L) ?? 0L,
+                g.Sum(m => m.ProxyStorageKey != null ? m.ProxySizeBytes : 0L) ?? 0L,
+                g.Sum(m => m.ThumbnailStorageKey != null ? m.ThumbnailSizeBytes : 0L) ?? 0L))
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? StorageAggregate.Empty;
+    }
+
+    private sealed record StorageAggregate(
+        int MediaCount,
+        long RawBytes,
+        long CanonicalBytes,
+        long ProxyBytes,
+        long ThumbnailBytes)
+    {
+        public static readonly StorageAggregate Empty = new(0, 0, 0, 0, 0);
+    }
 }

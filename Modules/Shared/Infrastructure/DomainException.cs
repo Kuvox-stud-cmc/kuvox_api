@@ -19,5 +19,7 @@ public sealed class DomainException(int statusCode, string message) : Exception(
 
     public static DomainException BadRequest(string message) => new(StatusCodes.Status400BadRequest, message);
 
+    public static DomainException PayloadTooLarge(string message) => new(StatusCodes.Status413PayloadTooLarge, message);
+
     public static DomainException ServiceUnavailable(string message) => new(StatusCodes.Status503ServiceUnavailable, message);
 }

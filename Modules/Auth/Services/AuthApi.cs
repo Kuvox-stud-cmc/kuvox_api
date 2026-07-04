@@ -1,4 +1,5 @@
 using Kuvox.Api.Modules.Auth.Contracts;
+using Kuvox.Api.Modules.Auth.Enums;
 using Kuvox.Api.Modules.Auth.Repositories;
 
 namespace Kuvox.Api.Modules.Auth.Services;
@@ -24,4 +25,19 @@ internal sealed class AuthApi(IUserRepository users) : IAuthApi
         var user = await users.GetByEmailAsync(email.Trim().ToLowerInvariant(), cancellationToken);
         return user is null ? null : new UserSummary(user.Id, user.Email, user.DisplayName);
     }
+
+    public async Task<UserPlanLimits?> GetPlanLimitsAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var user = await users.GetByIdAsync(userId, cancellationToken);
+        return user is null
+            ? null
+            : new UserPlanLimits(user.Plan.ToString(), StorageBytesFor(user.Plan));
+    }
+
+    private static long StorageBytesFor(UserPlan plan) =>
+        plan switch
+        {
+            UserPlan.Creator => 100L * 1024L * 1024L * 1024L,
+            _ => 5L * 1024L * 1024L * 1024L,
+        };
 }

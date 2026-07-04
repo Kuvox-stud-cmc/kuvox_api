@@ -1,6 +1,7 @@
 using Kuvox.Api.Modules.Media.Enums;
 using Kuvox.Api.Modules.Media.Models;
 using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Kuvox.Api.Modules.Media.Repositories;
 
@@ -25,6 +26,13 @@ internal interface IMediaRepository
 
     Task<IReadOnlyList<Models.Media>> ListStalePipelineAsync(DateTimeOffset cutoff, int batchSize, CancellationToken cancellationToken = default);
 
+    Task<MediaStorageUsageSummary> GetStorageUsageAsync(
+        OwnerKind ownerKind, Guid ownerId, CancellationToken cancellationToken = default);
+
+    Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default);
+
+    Task AcquireStorageQuotaLockAsync(OwnerKind ownerKind, Guid ownerId, CancellationToken cancellationToken = default);
+
     Task<MediaUser?> GetMediaUserAsync(Guid mediaId, Guid userId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyDictionary<Guid, bool>> GetFavoriteFlagsAsync(
@@ -43,4 +51,21 @@ internal interface IMediaRepository
     void Remove(Models.Media media);
 
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
+}
+
+internal sealed record MediaStorageUsageSummary(
+    int MediaCount,
+    long RawBytes,
+    long CanonicalBytes,
+    long ProxyBytes,
+    long ThumbnailBytes,
+    int TrashMediaCount,
+    long TrashRawBytes,
+    long TrashCanonicalBytes,
+    long TrashProxyBytes,
+    long TrashThumbnailBytes)
+{
+    public long StorageBytesUsed => RawBytes + CanonicalBytes + ProxyBytes + ThumbnailBytes;
+
+    public long TrashBytesUsed => TrashRawBytes + TrashCanonicalBytes + TrashProxyBytes + TrashThumbnailBytes;
 }

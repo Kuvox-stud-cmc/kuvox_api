@@ -17,4 +17,9 @@ public interface IAuthApi
     /// case-insensitively. Returns <c>null</c> if no such user exists.
     /// </summary>
     Task<UserSummary?> GetSummaryByEmailAsync(string email, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns the user's plan name and storage quota, or <c>null</c> if not found.</summary>
+    Task<UserPlanLimits?> GetPlanLimitsAsync(Guid userId, CancellationToken cancellationToken = default);
 }
+
+public sealed record UserPlanLimits(string Plan, long StorageBytes);

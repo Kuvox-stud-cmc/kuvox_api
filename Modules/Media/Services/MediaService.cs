@@ -31,6 +31,7 @@ internal sealed class MediaService(
 {
     /// <summary>Trash auto-purge window (kept in sync with <c>TrashPurgeService</c>).</summary>
     public static readonly TimeSpan TrashRetention = TimeSpan.FromDays(7);
+    private const long StudioStorageQuotaBytes = 500L * 1024L * 1024L * 1024L;
 
     public async Task<PagedResult<MediaDto>> ListByWorkspaceAsync(
         WorkspaceScope scope, CallerContext caller, int page, int pageSize, CancellationToken cancellationToken = default)
@@ -203,11 +204,22 @@ internal sealed class MediaService(
 
         var mediaId = Guid.NewGuid();
         var filename = NormalizeUploadFilename(request.Filename, request.File.FileName);
+        var ownerKind = OwnerKindOf(scope);
 
         StoredMediaObject? storedObject = null;
 
         try
         {
+            await using var quotaTransaction = await media.BeginTransactionAsync(cancellationToken);
+            await media.AcquireStorageQuotaLockAsync(ownerKind, scope.OwnerId, cancellationToken);
+
+            var storagePlan = await ResolveStoragePlanAsync(scope, cancellationToken);
+            var usage = await media.GetStorageUsageAsync(ownerKind, scope.OwnerId, cancellationToken);
+            if (usage.StorageBytesUsed + request.File.Length > storagePlan.StorageBytes)
+            {
+                throw DomainException.PayloadTooLarge("Storage quota exceeded.");
+            }
+
             storedObject = await storage.UploadRawAsync(
                 request.File,
                 mediaId,
@@ -224,7 +236,7 @@ internal sealed class MediaService(
                     Height = 0,
                     FrameRate = 0,
                     OwnerId = scope.OwnerId,
-                    OwnerKind = OwnerKindOf(scope),
+                    OwnerKind = ownerKind,
                     Filename = filename,
                     StorageKey = storedObject.ObjectKey,
                     RawBucketName = storedObject.BucketName,
@@ -238,7 +250,7 @@ internal sealed class MediaService(
                     Id = mediaId,
                     DurationSeconds = 0,
                     OwnerId = scope.OwnerId,
-                    OwnerKind = OwnerKindOf(scope),
+                    OwnerKind = ownerKind,
                     Filename = filename,
                     StorageKey = storedObject.ObjectKey,
                     RawBucketName = storedObject.BucketName,
@@ -253,7 +265,7 @@ internal sealed class MediaService(
                     Width = 0,
                     Height = 0,
                     OwnerId = scope.OwnerId,
-                    OwnerKind = OwnerKindOf(scope),
+                    OwnerKind = ownerKind,
                     Filename = filename,
                     StorageKey = storedObject.ObjectKey,
                     RawBucketName = storedObject.BucketName,
@@ -289,6 +301,7 @@ internal sealed class MediaService(
                     payload: optimizationEvent),
                 cancellationToken);
             await media.SaveChangesAsync(cancellationToken);
+            await quotaTransaction.CommitAsync(cancellationToken);
 
             var dto = ToDto(item);
             await realtime.MediaUpdatedAsync(item, dto, "uploaded", cancellationToken);
@@ -307,6 +320,15 @@ internal sealed class MediaService(
             }
             throw;
         }
+    }
+
+    public async Task<MediaStorageUsageDto> GetPersonalStorageUsageAsync(
+        CallerContext caller,
+        CancellationToken cancellationToken = default)
+    {
+        var plan = await ResolveUserStoragePlanAsync(caller.UserId, cancellationToken);
+        var usage = await media.GetStorageUsageAsync(OwnerKind.User, caller.UserId, cancellationToken);
+        return ToStorageUsageDto(plan.Plan, plan.StorageBytes, usage);
     }
 
     public async Task<MediaDto> SetFavoriteAsync(
@@ -842,6 +864,57 @@ internal sealed class MediaService(
         return item is null || item.DeletedAt is not null
             ? throw DomainException.NotFound("Media not found.")
             : item;
+    }
+
+    private async Task<(string Plan, long StorageBytes)> ResolveStoragePlanAsync(
+        WorkspaceScope scope,
+        CancellationToken cancellationToken)
+    {
+        if (scope.IsStudio)
+        {
+            return ("Studio", StudioStorageQuotaBytes);
+        }
+
+        return await ResolveUserStoragePlanAsync(scope.OwnerId, cancellationToken);
+    }
+
+    private async Task<(string Plan, long StorageBytes)> ResolveUserStoragePlanAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var plan = await auth.GetPlanLimitsAsync(userId, cancellationToken)
+            ?? throw DomainException.BadRequest("Unknown owner.");
+        return (plan.Plan, plan.StorageBytes);
+    }
+
+    private static MediaStorageUsageDto ToStorageUsageDto(
+        string plan,
+        long quotaBytes,
+        MediaStorageUsageSummary usage)
+    {
+        var used = usage.StorageBytesUsed;
+        var percent = quotaBytes <= 0
+            ? 0
+            : Math.Min(100, Math.Round((double)used / quotaBytes * 100, 1));
+
+        return new MediaStorageUsageDto(
+            plan,
+            used,
+            quotaBytes,
+            percent,
+            usage.MediaCount,
+            used - usage.TrashBytesUsed,
+            usage.TrashBytesUsed,
+            new MediaStorageObjectBreakdownDto(
+                usage.RawBytes,
+                usage.CanonicalBytes,
+                usage.ProxyBytes,
+                usage.ThumbnailBytes),
+            new MediaStorageObjectBreakdownDto(
+                usage.TrashRawBytes,
+                usage.TrashCanonicalBytes,
+                usage.TrashProxyBytes,
+                usage.TrashThumbnailBytes));
     }
 
     private static bool CanRead(Models.Media item, CallerContext caller) =>

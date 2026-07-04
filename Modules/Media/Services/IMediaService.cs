@@ -19,6 +19,8 @@ public interface IMediaService
 
     Task<MediaDto> UploadRawAsync(WorkspaceScope scope, CallerContext caller, UploadMediaRequest request, CancellationToken cancellationToken = default);
 
+    Task<MediaStorageUsageDto> GetPersonalStorageUsageAsync(CallerContext caller, CancellationToken cancellationToken = default);
+
     Task<MediaDto> SetFavoriteAsync(Guid id, CallerContext caller, ToggleMediaFavoriteRequest request, CancellationToken cancellationToken = default);
 
     Task HandleOptimizationCompletedAsync(MediaOptimizationCompletedEvent completed, CancellationToken cancellationToken = default);

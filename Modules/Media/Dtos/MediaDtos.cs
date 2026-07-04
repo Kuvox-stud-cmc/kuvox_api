@@ -45,6 +45,25 @@ public sealed record ShareMediaRequest(string Email, Permission Role);
 
 public sealed record ToggleMediaFavoriteRequest(bool IsFavorite);
 
+public sealed record MediaStorageUsageDto(
+    string Plan,
+    long StorageBytesUsed,
+    long StorageBytesQuota,
+    double StoragePercent,
+    int MediaCount,
+    long ActiveBytesUsed,
+    long TrashBytesUsed,
+    MediaStorageObjectBreakdownDto ObjectBreakdown,
+    MediaStorageObjectBreakdownDto TrashObjectBreakdown
+);
+
+public sealed record MediaStorageObjectBreakdownDto(
+    long RawBytes,
+    long CanonicalBytes,
+    long ProxyBytes,
+    long ThumbnailBytes
+);
+
 /// <summary>A trashed media item plus how long until auto-purge removes it (7-day window).</summary>
 public sealed record MediaTrashItemDto(
     Guid Id,

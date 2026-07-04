@@ -24,7 +24,7 @@ internal sealed class StudioService(
     INotificationsApi notifications,
     MediatR.IMediator mediator) : IStudioService
 {
-    private const long DefaultStorageQuota = 25L * 1024L * 1024L * 1024L;
+    private const long DefaultStorageQuota = 500L * 1024L * 1024L * 1024L;
     private readonly string _frontendBaseUrl = frontendOptions.Value.BaseUrl.TrimEnd('/');
     public async Task<IReadOnlyList<StudioDto>> ListMineAsync(Guid callerUserId, CancellationToken cancellationToken = default)
     {

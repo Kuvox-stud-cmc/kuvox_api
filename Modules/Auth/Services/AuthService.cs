@@ -399,8 +399,8 @@ internal sealed class AuthService(
     private static PlanLimitsDto ToPlanLimitsDto(UserPlan plan) =>
         plan switch
         {
-            UserPlan.Creator => new(plan.ToString(), 1024L * 1024L * 1024L * 1024L, 500, 5, true),
-            _ => new(plan.ToString(), 25L * 1024L * 1024L * 1024L, 10, 1, false),
+            UserPlan.Creator => new(plan.ToString(), 100L * 1024L * 1024L * 1024L, 500, 5, true),
+            _ => new(plan.ToString(), 5L * 1024L * 1024L * 1024L, 10, 1, false),
         };
 
     private static string NormalizeEditorMode(string value)

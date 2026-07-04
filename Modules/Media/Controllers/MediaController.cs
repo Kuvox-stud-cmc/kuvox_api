@@ -36,6 +36,11 @@ public sealed class MediaController(IMediaService media) : ControllerBase
         [FromQuery] Guid? studioId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default) =>
         media.ListTrashAsync(ResolveWorkspace(studioId), page, pageSize, ct);
 
+    /// <summary>The caller's personal account storage usage, including soft-deleted media.</summary>
+    [HttpGet("storage-usage")]
+    public Task<MediaStorageUsageDto> StorageUsage(CancellationToken ct = default) =>
+        media.GetPersonalStorageUsageAsync(Caller(), ct);
+
     [HttpGet("{id:guid}")]
     public Task<MediaDto> Get(Guid id, CancellationToken ct) => media.GetAsync(id, Caller(), ct);
 
