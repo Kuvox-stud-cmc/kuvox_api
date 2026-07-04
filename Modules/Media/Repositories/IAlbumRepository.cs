@@ -6,11 +6,14 @@ internal interface IAlbumRepository
 {
     Task<Album?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<Album>> ListByUserAsync(Guid userId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Album>> ListByUserAsync(Guid userId, bool includeSystem = false, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<Models.Media>> ListAlbumMediaAsync(Guid albumId, CancellationToken cancellationToken = default);
 
     Task<AlbumUser?> GetAlbumUserAsync(Guid albumId, Guid userId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyDictionary<Guid, bool>> GetFavoriteFlagsAsync(
+        IEnumerable<Guid> albumIds, Guid userId, CancellationToken cancellationToken = default);
 
     void Add(Album album);
 

@@ -27,6 +27,9 @@ internal interface IMediaRepository
 
     Task<MediaUser?> GetMediaUserAsync(Guid mediaId, Guid userId, CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyDictionary<Guid, bool>> GetFavoriteFlagsAsync(
+        IEnumerable<Guid> mediaIds, Guid userId, CancellationToken cancellationToken = default);
+
     Task AddAsync(Models.Media media, CancellationToken cancellationToken = default);
 
     Task AddMediaUserAsync(MediaUser mediaUser, CancellationToken cancellationToken = default);

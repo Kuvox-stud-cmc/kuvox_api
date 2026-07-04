@@ -23,10 +23,12 @@ public sealed class AlbumController(IAlbumService albumService) : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<AlbumDto>>> ListAlbums(CancellationToken cancellationToken)
+    public async Task<ActionResult<IEnumerable<AlbumDto>>> ListAlbums(
+        [FromQuery] bool includeSystem = false,
+        CancellationToken cancellationToken = default)
     {
         var userId = Caller().UserId;
-        var albums = await albumService.ListAlbumsAsync(userId, cancellationToken);
+        var albums = await albumService.ListAlbumsAsync(userId, includeSystem, cancellationToken);
         return Ok(albums);
     }
 
@@ -38,11 +40,25 @@ public sealed class AlbumController(IAlbumService albumService) : ControllerBase
         return NoContent();
     }
 
-    [HttpGet("{id:guid}/media")]
-    public async Task<ActionResult<PagedResult<MediaDto>>> ListAlbumMedia(Guid id, CancellationToken cancellationToken)
+    [HttpPut("{id:guid}/favorite")]
+    public async Task<ActionResult<AlbumDto>> FavoriteAlbum(
+        Guid id,
+        [FromBody] ToggleAlbumFavoriteRequest request,
+        CancellationToken cancellationToken)
     {
         var userId = Caller().UserId;
-        var media = await albumService.ListAlbumMediaAsync(id, userId, cancellationToken);
+        var album = await albumService.SetFavoriteAsync(id, userId, request, cancellationToken);
+        return Ok(album);
+    }
+
+    [HttpGet("{id:guid}/media")]
+    public async Task<ActionResult<PagedResult<MediaDto>>> ListAlbumMedia(
+        Guid id,
+        [FromQuery] bool includeSystem = false,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = Caller().UserId;
+        var media = await albumService.ListAlbumMediaAsync(id, userId, includeSystem, cancellationToken);
         return Ok(media);
     }
 
@@ -54,6 +70,17 @@ public sealed class AlbumController(IAlbumService albumService) : ControllerBase
     {
         var userId = Caller().UserId;
         await albumService.AddMediaToAlbumAsync(id, request.MediaIds, userId, cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPost("audio-categories/{category}/media")]
+    public async Task<IActionResult> AssignAudioCategory(
+        string category,
+        [FromBody] AssignAudioCategoryDto request,
+        CancellationToken cancellationToken)
+    {
+        var userId = Caller().UserId;
+        await albumService.AssignAudioCategoryAsync(category, request.MediaIds, userId, cancellationToken);
         return NoContent();
     }
 

@@ -22,7 +22,7 @@ public sealed class MediaController(IMediaService media) : ControllerBase
     [HttpGet]
     public Task<PagedResult<MediaDto>> List(
         [FromQuery] Guid? studioId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default) =>
-        media.ListByWorkspaceAsync(ResolveWorkspace(studioId), page, pageSize, ct);
+        media.ListByWorkspaceAsync(ResolveWorkspace(studioId), Caller(), page, pageSize, ct);
 
     /// <summary>Media shared with the caller by other owners.</summary>
     [HttpGet("shared")]
@@ -67,6 +67,10 @@ public sealed class MediaController(IMediaService media) : ControllerBase
         [FromForm] UploadMediaRequest request, 
         CancellationToken ct) =>
         media.UploadRawAsync(ResolveWorkspace(studioId), Caller(), request, ct);
+
+    [HttpPut("{id:guid}/favorite")]
+    public Task<MediaDto> Favorite(Guid id, ToggleMediaFavoriteRequest request, CancellationToken ct) =>
+        media.SetFavoriteAsync(id, Caller(), request, ct);
 
     [HttpPost("{id:guid}/share")]
     public async Task<IActionResult> Share(Guid id, ShareMediaRequest request, CancellationToken ct)

@@ -33,11 +33,12 @@ internal sealed class MediaService(
     public static readonly TimeSpan TrashRetention = TimeSpan.FromDays(7);
 
     public async Task<PagedResult<MediaDto>> ListByWorkspaceAsync(
-        WorkspaceScope scope, int page, int pageSize, CancellationToken cancellationToken = default)
+        WorkspaceScope scope, CallerContext caller, int page, int pageSize, CancellationToken cancellationToken = default)
     {
         (page, pageSize) = Normalize(page, pageSize);
         var (items, total) = await media.ListByWorkspaceAsync(OwnerKindOf(scope), scope.OwnerId, page, pageSize, cancellationToken);
-        return new PagedResult<MediaDto>(items.Select(ToDto).ToList(), page, pageSize, total);
+        var flags = await media.GetFavoriteFlagsAsync(items.Select(item => item.Id), caller.UserId, cancellationToken);
+        return new PagedResult<MediaDto>(items.Select(item => ToDto(item, flags.GetValueOrDefault(item.Id))).ToList(), page, pageSize, total);
     }
 
     public async Task<PagedResult<MediaDto>> ListSharedWithMeAsync(
@@ -45,7 +46,8 @@ internal sealed class MediaService(
     {
         (page, pageSize) = Normalize(page, pageSize);
         var (items, total) = await media.ListSharedWithUserAsync(userId, page, pageSize, cancellationToken);
-        return new PagedResult<MediaDto>(items.Select(x => ToDto(x.Media)).ToList(), page, pageSize, total);
+        var flags = await media.GetFavoriteFlagsAsync(items.Select(item => item.Media.Id), userId, cancellationToken);
+        return new PagedResult<MediaDto>(items.Select(item => ToDto(item.Media, flags.GetValueOrDefault(item.Media.Id))).ToList(), page, pageSize, total);
     }
 
     public async Task<PagedResult<MediaTrashItemDto>> ListTrashAsync(
@@ -64,7 +66,8 @@ internal sealed class MediaService(
             throw DomainException.Forbidden("You do not have access to this media item.");
         }
 
-        return ToDto(item);
+        var mediaUser = await media.GetMediaUserAsync(item.Id, caller.UserId, cancellationToken);
+        return ToDto(item, mediaUser?.IsFavorite ?? false);
     }
 
     public async Task<MediaObjectDownload> GetObjectAsync(
@@ -306,6 +309,42 @@ internal sealed class MediaService(
         }
     }
 
+    public async Task<MediaDto> SetFavoriteAsync(
+        Guid id,
+        CallerContext caller,
+        ToggleMediaFavoriteRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var item = await LoadLiveAsync(id, cancellationToken);
+        if (!await CanAccessAsync(item, caller, cancellationToken))
+        {
+            throw DomainException.Forbidden("You do not have access to this media item.");
+        }
+
+        var mediaUser = await media.GetMediaUserAsync(item.Id, caller.UserId, cancellationToken);
+        if (mediaUser is null)
+        {
+            if (request.IsFavorite && item.OwnerKind == OwnerKind.User && caller.OwnsAsUser(item.OwnerId))
+            {
+                mediaUser = CreateMediaUser(item, caller.UserId, Permission.Owner);
+                mediaUser.IsFavorite = true;
+                await media.AddMediaUserAsync(mediaUser, cancellationToken);
+                await media.SaveChangesAsync(cancellationToken);
+            }
+
+            return ToDto(item, mediaUser?.IsFavorite ?? false);
+        }
+
+        if (mediaUser.IsFavorite != request.IsFavorite)
+        {
+            mediaUser.IsFavorite = request.IsFavorite;
+            mediaUser.UpdatedAt = DateTimeOffset.UtcNow;
+            await media.SaveChangesAsync(cancellationToken);
+        }
+
+        return ToDto(item, mediaUser.IsFavorite);
+    }
+
     public async Task HandleOptimizationCompletedAsync(
         MediaOptimizationCompletedEvent completed,
         CancellationToken cancellationToken = default)
@@ -533,13 +572,7 @@ internal sealed class MediaService(
         var existing = await media.GetMediaUserAsync(item.Id, invitee.Id, cancellationToken);
         if (existing is null)
         {
-            MediaUser newUser = item switch
-            {
-                Video => new VideoUser { MediaId = item.Id, UserId = invitee.Id, Role = request.Role, IsFavorite = false },
-                Audio => new AudioUser { MediaId = item.Id, UserId = invitee.Id, Role = request.Role, IsFavorite = false },
-                Photo => new PhotoUser { MediaId = item.Id, UserId = invitee.Id, Role = request.Role, IsFavorite = false },
-                _ => throw new NotSupportedException()
-            };
+            MediaUser newUser = CreateMediaUser(item, invitee.Id, request.Role);
             await media.AddMediaUserAsync(newUser, cancellationToken);
         }
         else
@@ -857,7 +890,16 @@ internal sealed class MediaService(
     private static (int Page, int PageSize) Normalize(int page, int pageSize) =>
         (Math.Max(1, page), Math.Clamp(pageSize, 1, 100));
 
-    internal static MediaDto ToDto(Models.Media m)
+    private static MediaUser CreateMediaUser(Models.Media item, Guid userId, Permission role) =>
+        item switch
+        {
+            Video => new VideoUser { MediaId = item.Id, UserId = userId, Role = role, IsFavorite = false },
+            Audio => new AudioUser { MediaId = item.Id, UserId = userId, Role = role, IsFavorite = false },
+            Photo => new PhotoUser { MediaId = item.Id, UserId = userId, Role = role, IsFavorite = false },
+            _ => throw new NotSupportedException()
+        };
+
+    internal static MediaDto ToDto(Models.Media m, bool isFavorite = false)
     {
         double? duration = m switch { Video v => v.DurationSeconds, Audio a => a.DurationSeconds, _ => null };
         int? width = m switch { Video v => v.Width, Photo p => p.Width, _ => null };
@@ -883,6 +925,7 @@ internal sealed class MediaService(
             m.Codec,
             frameRate,
             m.CreatedAt,
+            isFavorite,
             ToPipelineDto(m));
     }
 

@@ -21,11 +21,12 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
     public static readonly TimeSpan TrashRetention = TimeSpan.FromDays(7);
 
     public async Task<PagedResult<ProjectDto>> ListByWorkspaceAsync(
-        WorkspaceScope scope, int page, int pageSize, CancellationToken cancellationToken = default)
+        WorkspaceScope scope, CallerContext caller, int page, int pageSize, CancellationToken cancellationToken = default)
     {
         (page, pageSize) = Normalize(page, pageSize);
         var (items, total) = await projects.ListByWorkspaceAsync(OwnerKindOf(scope), scope.OwnerId, page, pageSize, cancellationToken);
-        return new PagedResult<ProjectDto>(items.Select(ToDto).ToList(), page, pageSize, total);
+        var flags = await projects.GetStarFlagsAsync(items.Select(project => project.Id), caller.UserId, cancellationToken);
+        return new PagedResult<ProjectDto>(items.Select(project => ToDto(project, flags.GetValueOrDefault(project.Id))).ToList(), page, pageSize, total);
     }
 
     public async Task<PagedResult<ProjectDto>> ListSharedWithMeAsync(
@@ -33,7 +34,8 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
     {
         (page, pageSize) = Normalize(page, pageSize);
         var (items, total) = await projects.ListSharedWithUserAsync(userId, page, pageSize, cancellationToken);
-        return new PagedResult<ProjectDto>(items.Select(x => ToDto(x.Project)).ToList(), page, pageSize, total);
+        var flags = await projects.GetStarFlagsAsync(items.Select(item => item.Project.Id), userId, cancellationToken);
+        return new PagedResult<ProjectDto>(items.Select(item => ToDto(item.Project, flags.GetValueOrDefault(item.Project.Id))).ToList(), page, pageSize, total);
     }
 
     public async Task<PagedResult<ProjectTrashItemDto>> ListTrashAsync(
@@ -52,7 +54,8 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
             throw DomainException.Forbidden("You do not have access to this project.");
         }
 
-        return ToDto(project);
+        var projectUser = await projects.GetProjectUserAsync(project.Id, caller.UserId, cancellationToken);
+        return ToDto(project, projectUser?.IsStarred ?? false);
     }
 
     public async Task<ProjectDto> CreateAsync(
@@ -97,7 +100,44 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
         project.UpdatedAt = DateTimeOffset.UtcNow;
         await projects.SaveChangesAsync(cancellationToken);
 
-        return ToDto(project);
+        var projectUser = await projects.GetProjectUserAsync(project.Id, caller.UserId, cancellationToken);
+        return ToDto(project, projectUser?.IsStarred ?? false);
+    }
+
+    public async Task<ProjectDto> SetStarAsync(
+        Guid id,
+        CallerContext caller,
+        ToggleProjectStarRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var project = await LoadLiveAsync(id, cancellationToken);
+        if (!await CanAccessAsync(project, caller, cancellationToken))
+        {
+            throw DomainException.Forbidden("You do not have access to this project.");
+        }
+
+        var projectUser = await projects.GetProjectUserAsync(project.Id, caller.UserId, cancellationToken);
+        if (projectUser is null)
+        {
+            if (request.IsStarred && project.OwnerKind == OwnerKind.User && caller.OwnsAsUser(project.OwnerId))
+            {
+                projectUser = CreateProjectUser(project.Id, caller.UserId, ProjectRole.Owner);
+                projectUser.IsStarred = true;
+                await projects.AddProjectUserAsync(projectUser, cancellationToken);
+                await projects.SaveChangesAsync(cancellationToken);
+            }
+
+            return ToDto(project, projectUser?.IsStarred ?? false);
+        }
+
+        if (projectUser.IsStarred != request.IsStarred)
+        {
+            projectUser.IsStarred = request.IsStarred;
+            projectUser.UpdatedAt = DateTimeOffset.UtcNow;
+            await projects.SaveChangesAsync(cancellationToken);
+        }
+
+        return ToDto(project, projectUser.IsStarred);
     }
 
     public async Task ShareAsync(
@@ -117,9 +157,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
         var existing = await projects.GetProjectUserAsync(project.Id, invitee.Id, cancellationToken);
         if (existing is null)
         {
-            await projects.AddProjectUserAsync(
-                new ProjectUser { ProjectId = project.Id, UserId = invitee.Id, Role = request.Role, IsStarred = false, IsTemplate = false },
-                cancellationToken);
+            await projects.AddProjectUserAsync(CreateProjectUser(project.Id, invitee.Id, request.Role), cancellationToken);
         }
         else
         {
@@ -229,8 +267,11 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
     private static (int Page, int PageSize) Normalize(int page, int pageSize) =>
         (Math.Max(1, page), Math.Clamp(pageSize, 1, 100));
 
-    private static ProjectDto ToDto(Project p) =>
-        new(p.Id, p.OwnerId, p.OwnerKind, p.Kind, p.Name, p.Description, p.DurationSeconds, p.Status, p.CreatedAt, p.UpdatedAt);
+    private static ProjectUser CreateProjectUser(Guid projectId, Guid userId, ProjectRole role) =>
+        new() { ProjectId = projectId, UserId = userId, Role = role, IsStarred = false, IsTemplate = false };
+
+    private static ProjectDto ToDto(Project p, bool isStarred = false) =>
+        new(p.Id, p.OwnerId, p.OwnerKind, p.Kind, p.Name, p.Description, p.DurationSeconds, p.Status, p.CreatedAt, p.UpdatedAt, isStarred);
 
     private static ProjectTrashItemDto ToTrashDto(Project p)
     {

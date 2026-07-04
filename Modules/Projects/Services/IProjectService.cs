@@ -13,7 +13,7 @@ namespace Kuvox.Api.Modules.Projects.Services;
 /// </summary>
 public interface IProjectService
 {
-    Task<PagedResult<ProjectDto>> ListByWorkspaceAsync(WorkspaceScope scope, int page, int pageSize, CancellationToken cancellationToken = default);
+    Task<PagedResult<ProjectDto>> ListByWorkspaceAsync(WorkspaceScope scope, CallerContext caller, int page, int pageSize, CancellationToken cancellationToken = default);
 
     Task<PagedResult<ProjectDto>> ListSharedWithMeAsync(Guid userId, int page, int pageSize, CancellationToken cancellationToken = default);
 
@@ -24,6 +24,8 @@ public interface IProjectService
     Task<ProjectDto> CreateAsync(WorkspaceScope scope, CallerContext caller, CreateProjectRequest request, CancellationToken cancellationToken = default);
 
     Task<ProjectDto> UpdateAsync(Guid id, CallerContext caller, UpdateProjectRequest request, CancellationToken cancellationToken = default);
+
+    Task<ProjectDto> SetStarAsync(Guid id, CallerContext caller, ToggleProjectStarRequest request, CancellationToken cancellationToken = default);
 
     Task ShareAsync(Guid id, CallerContext caller, ShareProjectRequest request, CancellationToken cancellationToken = default);
 

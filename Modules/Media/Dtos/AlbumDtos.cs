@@ -8,7 +8,8 @@ public sealed record AlbumDto(
     string Description,
     AlbumKind Kind,
     string MaterialSymbol,
-    bool IsDeleteAble
+    bool IsDeleteAble,
+    bool IsFavorite
 );
 
 /// <summary>Creates a new album</summary>
@@ -33,9 +34,15 @@ public sealed record AddMediaToAlbumDto(
     IEnumerable<Guid> MediaIds
 );
 
+public sealed record AssignAudioCategoryDto(
+    IEnumerable<Guid> MediaIds
+);
+
 /// <summary>
 /// Delete items from an album, only for owners and editors
 /// </summary>
 public sealed record DeleteMediaFromAlbumDto(
     IEnumerable<Guid> MediaIds
 );
+
+public sealed record ToggleAlbumFavoriteRequest(bool IsFavorite);

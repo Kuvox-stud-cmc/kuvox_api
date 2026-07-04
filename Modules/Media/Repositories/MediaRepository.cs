@@ -80,6 +80,22 @@ internal sealed class MediaRepository(MediaDbContext db) : IMediaRepository
     public Task<MediaUser?> GetMediaUserAsync(Guid mediaId, Guid userId, CancellationToken cancellationToken = default) =>
         db.MediaUsers.FirstOrDefaultAsync(mu => mu.MediaId == mediaId && mu.UserId == userId, cancellationToken);
 
+    public async Task<IReadOnlyDictionary<Guid, bool>> GetFavoriteFlagsAsync(
+        IEnumerable<Guid> mediaIds,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = mediaIds.Distinct().ToArray();
+        if (ids.Length == 0)
+        {
+            return new Dictionary<Guid, bool>();
+        }
+
+        return await db.MediaUsers
+            .Where(mu => mu.UserId == userId && ids.Contains(mu.MediaId))
+            .ToDictionaryAsync(mu => mu.MediaId, mu => mu.IsFavorite, cancellationToken);
+    }
+
     public async Task AddAsync(Models.Media media, CancellationToken cancellationToken = default) =>
         await db.Media.AddAsync(media, cancellationToken);
 

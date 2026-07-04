@@ -23,7 +23,7 @@ public sealed class ProjectsController(IProjectService projects) : ControllerBas
     [HttpGet]
     public Task<PagedResult<ProjectDto>> List(
         [FromQuery] Guid? studioId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default) =>
-        projects.ListByWorkspaceAsync(ResolveWorkspace(studioId), page, pageSize, ct);
+        projects.ListByWorkspaceAsync(ResolveWorkspace(studioId), Caller(), page, pageSize, ct);
 
     /// <summary>Projects shared with the caller by other owners.</summary>
     [HttpGet("shared")]
@@ -47,6 +47,10 @@ public sealed class ProjectsController(IProjectService projects) : ControllerBas
     [HttpPut("{id:guid}")]
     public Task<ProjectDto> Update(Guid id, UpdateProjectRequest request, CancellationToken ct) =>
         projects.UpdateAsync(id, Caller(), request, ct);
+
+    [HttpPut("{id:guid}/star")]
+    public Task<ProjectDto> Star(Guid id, ToggleProjectStarRequest request, CancellationToken ct) =>
+        projects.SetStarAsync(id, Caller(), request, ct);
 
     [HttpPost("{id:guid}/share")]
     public async Task<IActionResult> Share(Guid id, ShareProjectRequest request, CancellationToken ct)

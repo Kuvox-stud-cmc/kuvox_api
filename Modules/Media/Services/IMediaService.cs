@@ -7,7 +7,7 @@ namespace Kuvox.Api.Modules.Media.Services;
 
 public interface IMediaService
 {
-    Task<PagedResult<MediaDto>> ListByWorkspaceAsync(WorkspaceScope scope, int page, int pageSize, CancellationToken cancellationToken = default);
+    Task<PagedResult<MediaDto>> ListByWorkspaceAsync(WorkspaceScope scope, CallerContext caller, int page, int pageSize, CancellationToken cancellationToken = default);
 
     Task<PagedResult<MediaDto>> ListSharedWithMeAsync(Guid userId, int page, int pageSize, CancellationToken cancellationToken = default);
 
@@ -18,6 +18,8 @@ public interface IMediaService
     Task<MediaObjectDownload> GetObjectAsync(Guid id, string variant, CallerContext caller, CancellationToken cancellationToken = default);
 
     Task<MediaDto> UploadRawAsync(WorkspaceScope scope, CallerContext caller, UploadMediaRequest request, CancellationToken cancellationToken = default);
+
+    Task<MediaDto> SetFavoriteAsync(Guid id, CallerContext caller, ToggleMediaFavoriteRequest request, CancellationToken cancellationToken = default);
 
     Task HandleOptimizationCompletedAsync(MediaOptimizationCompletedEvent completed, CancellationToken cancellationToken = default);
 

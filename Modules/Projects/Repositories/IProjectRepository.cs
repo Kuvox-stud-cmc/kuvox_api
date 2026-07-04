@@ -26,6 +26,9 @@ internal interface IProjectRepository
 
     Task<ProjectUser?> GetProjectUserAsync(Guid projectId, Guid userId, CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyDictionary<Guid, bool>> GetStarFlagsAsync(
+        IEnumerable<Guid> projectIds, Guid userId, CancellationToken cancellationToken = default);
+
     Task<int> DeleteProjectMediaByMediaIdAsync(Guid mediaId, CancellationToken cancellationToken = default);
 
     Task AddAsync(Project project, CancellationToken cancellationToken = default);

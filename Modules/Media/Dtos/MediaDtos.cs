@@ -21,6 +21,7 @@ public sealed record MediaDto(
     string? Codec,
     double? FrameRate,
     DateTimeOffset CreatedAt,
+    bool IsFavorite,
     MediaPipelineDto Pipeline
 );
 
@@ -41,6 +42,8 @@ public sealed record UploadMediaRequest(
 
 /// <summary>Grants another user (looked up by email) access to a media item.</summary>
 public sealed record ShareMediaRequest(string Email, Permission Role);
+
+public sealed record ToggleMediaFavoriteRequest(bool IsFavorite);
 
 /// <summary>A trashed media item plus how long until auto-purge removes it (7-day window).</summary>
 public sealed record MediaTrashItemDto(

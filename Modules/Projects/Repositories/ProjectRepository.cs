@@ -70,6 +70,22 @@ internal sealed class ProjectRepository(ProjectsDbContext db) : IProjectReposito
     public Task<ProjectUser?> GetProjectUserAsync(Guid projectId, Guid userId, CancellationToken cancellationToken = default) =>
         db.ProjectUsers.FirstOrDefaultAsync(pu => pu.ProjectId == projectId && pu.UserId == userId, cancellationToken);
 
+    public async Task<IReadOnlyDictionary<Guid, bool>> GetStarFlagsAsync(
+        IEnumerable<Guid> projectIds,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = projectIds.Distinct().ToArray();
+        if (ids.Length == 0)
+        {
+            return new Dictionary<Guid, bool>();
+        }
+
+        return await db.ProjectUsers
+            .Where(pu => pu.UserId == userId && ids.Contains(pu.ProjectId))
+            .ToDictionaryAsync(pu => pu.ProjectId, pu => pu.IsStarred, cancellationToken);
+    }
+
     public async Task<int> DeleteProjectMediaByMediaIdAsync(Guid mediaId, CancellationToken cancellationToken = default)
     {
         var deleted = 0;

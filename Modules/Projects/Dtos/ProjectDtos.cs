@@ -12,7 +12,8 @@ public sealed record ProjectDto(
     double? DurationSeconds,
     string Status,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    bool IsStarred);
 
 /// <summary>
 /// Create payload. Owner (workspace + user) is derived from the JWT + <c>studioId</c> query —
@@ -24,6 +25,8 @@ public sealed record UpdateProjectRequest(string Name, string? Description, stri
 
 /// <summary>Grants another user (looked up by email) access to a project.</summary>
 public sealed record ShareProjectRequest(string Email, ProjectRole Role);
+
+public sealed record ToggleProjectStarRequest(bool IsStarred);
 
 /// <summary>A trashed project plus how long until auto-purge removes it (7-day window).</summary>
 public sealed record ProjectTrashItemDto(
