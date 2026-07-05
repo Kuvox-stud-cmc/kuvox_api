@@ -47,7 +47,7 @@ internal sealed class UserRegisteredHandler(IAlbumRepository albumRepo) : INotif
     foreach (var album in defaultAlbums)
     {
       albumRepo.Add(album);
-      albumRepo.AddAlbumUser(new AlbumUser { AlbumId = album.Id, UserId = notification.UserId, Role = Permission.Owner, IsFavorite = false });
+      albumRepo.AddAlbumUser(new AlbumUser { AlbumId = album.Id, UserId = notification.UserId, Role = Permission.Owner, IsFavorite = false, IsHidden = false });
     }
 
     await albumRepo.SaveChangesAsync();

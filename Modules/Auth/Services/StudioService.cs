@@ -3,7 +3,9 @@ using Kuvox.Api.Modules.Auth.Enums;
 using Kuvox.Api.Modules.Auth.Models;
 using Kuvox.Api.Modules.Auth.Contracts;
 using Kuvox.Api.Modules.Auth.Repositories;
+using Kuvox.Api.Modules.Media.Contracts;
 using Kuvox.Api.Modules.Notifications;
+using Kuvox.Api.Modules.Projects.Contracts;
 using Kuvox.Api.Modules.Shared.Dtos;
 using Kuvox.Api.Modules.Shared.Infrastructure;
 using Kuvox.Api.Modules.Shared.Infrastructure.Email;
@@ -22,6 +24,8 @@ internal sealed class StudioService(
     IEmailSender emailSender,
     IOptions<FrontendOptions> frontendOptions,
     INotificationsApi notifications,
+    IMediaApi media,
+    IProjectsApi projects,
     MediatR.IMediator mediator) : IStudioService
 {
     private const long DefaultStorageQuota = 500L * 1024L * 1024L * 1024L;
@@ -417,7 +421,21 @@ internal sealed class StudioService(
     {
         await RequireAdminAsync(studioId, callerUserId, cancellationToken);
         var memberCount = await studios.CountMembersAsync(studioId, cancellationToken);
-        return new StudioUsageSummaryDto(memberCount, ProjectCount: 0, MediaCount: 0, StorageBytesUsed: 0, StorageBytesQuota: DefaultStorageQuota);
+        var projectCount = await projects.CountByWorkspaceAsync(
+            studioId,
+            Modules.Projects.Contracts.ProjectOwnerKind.Studio,
+            cancellationToken);
+        var mediaUsage = await media.GetWorkspaceUsageAsync(
+            studioId,
+            Modules.Media.Enums.OwnerKind.Studio,
+            cancellationToken);
+
+        return new StudioUsageSummaryDto(
+            memberCount,
+            projectCount,
+            mediaUsage.MediaCount,
+            mediaUsage.StorageBytesUsed,
+            DefaultStorageQuota);
     }
 
     private async Task<UserStudio> RequireMembershipAsync(Guid studioId, Guid callerUserId, CancellationToken cancellationToken)

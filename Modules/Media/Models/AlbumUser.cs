@@ -12,4 +12,6 @@ public sealed class AlbumUser : JunctionBaseEntity
   public required Permission Role { get; set; }
 
   public required bool IsFavorite { get; set; } = false;
+
+  public required bool IsHidden { get; set; } = false;
 }

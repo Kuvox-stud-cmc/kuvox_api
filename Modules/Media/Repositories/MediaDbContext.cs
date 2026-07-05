@@ -98,6 +98,7 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
             entity.ToTable("video_users");
             entity.Property(mu => mu.Role).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(mu => mu.IsFavorite).HasDefaultValue(false).IsRequired();
+            entity.Property(mu => mu.IsHidden).HasDefaultValue(false).IsRequired();
             entity.HasIndex(mu => mu.UserId);
 
             entity.HasOne<Models.Video>()
@@ -111,6 +112,7 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
             entity.ToTable("audio_users");
             entity.Property(mu => mu.Role).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(mu => mu.IsFavorite).HasDefaultValue(false).IsRequired();
+            entity.Property(mu => mu.IsHidden).HasDefaultValue(false).IsRequired();
             entity.HasIndex(mu => mu.UserId);
 
             entity.HasOne<Models.Audio>()
@@ -124,6 +126,7 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
             entity.ToTable("photo_users");
             entity.Property(mu => mu.Role).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(mu => mu.IsFavorite).HasDefaultValue(false).IsRequired();
+            entity.Property(mu => mu.IsHidden).HasDefaultValue(false).IsRequired();
             entity.HasIndex(mu => mu.UserId);
 
             entity.HasOne<Models.Photo>()
@@ -151,6 +154,7 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
             entity.HasKey(au => new { au.AlbumId, au.UserId });
             entity.Property(au => au.Role).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(au => au.IsFavorite).HasDefaultValue(false).IsRequired();
+            entity.Property(au => au.IsHidden).HasDefaultValue(false).IsRequired();
         
             entity.HasOne<Models.Album>()
                 .WithMany()

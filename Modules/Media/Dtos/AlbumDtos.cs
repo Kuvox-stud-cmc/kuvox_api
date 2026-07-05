@@ -6,11 +6,14 @@ public sealed record AlbumDto(
     Guid Id,
     Guid OwnerId,
     OwnerKind OwnerKind,
+    string? OwnerEmail,
+    string? OwnerDisplayName,
     string Name,
     string Description,
     AlbumKind Kind,
     string MaterialSymbol,
     bool IsDeleteAble,
+    int MediaCount,
     bool IsFavorite
 );
 
@@ -48,3 +51,17 @@ public sealed record DeleteMediaFromAlbumDto(
 );
 
 public sealed record ToggleAlbumFavoriteRequest(bool IsFavorite);
+
+public sealed record ShareAlbumRequest(string Email, Permission Role);
+
+public sealed record UpdateAlbumAccessRequest(Guid UserId, Permission? Role, bool IsHidden);
+
+public sealed record AlbumAccessMemberDto(
+    Guid UserId,
+    string Email,
+    string DisplayName,
+    string StudioRole,
+    Permission EffectiveRole,
+    Permission? OverrideRole,
+    bool IsHidden,
+    bool CanManage);

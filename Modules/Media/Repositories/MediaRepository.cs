@@ -33,7 +33,7 @@ internal sealed class MediaRepository(MediaDbContext db) : IMediaRepository
         var query =
             from mu in db.MediaUsers
             join m in db.Media on mu.MediaId equals m.Id
-            where mu.UserId == userId && m.DeletedAt == null && m.OwnerId != userId
+            where mu.UserId == userId && !mu.IsHidden && m.DeletedAt == null && m.OwnerKind == OwnerKind.User && m.OwnerId != userId
             orderby m.UpdatedAt descending
             select new { Media = m, mu.Role };
 
@@ -195,10 +195,24 @@ internal sealed class MediaRepository(MediaDbContext db) : IMediaRepository
             .GroupBy(_ => 1)
             .Select(g => new StorageAggregate(
                 g.Count(),
-                g.Sum(m => m.RawStorageKey != null ? m.RawSizeBytes : 0L) ?? 0L,
-                g.Sum(m => m.CanonicalStorageKey != null ? m.CanonicalSizeBytes : 0L) ?? 0L,
-                g.Sum(m => m.ProxyStorageKey != null ? m.ProxySizeBytes : 0L) ?? 0L,
-                g.Sum(m => m.ThumbnailStorageKey != null ? m.ThumbnailSizeBytes : 0L) ?? 0L))
+                g.Sum(m =>
+                    m.RawStorageKey != null
+                        ? m.RawSizeBytes ?? (m.StorageKey == m.RawStorageKey ? m.SizeBytes : 0L)
+                        : m.CanonicalStorageKey == null && m.ProxyStorageKey == null && m.ThumbnailStorageKey == null
+                            ? m.SizeBytes
+                            : 0L),
+                g.Sum(m =>
+                    m.CanonicalStorageKey != null
+                        ? m.CanonicalSizeBytes ?? (m.StorageKey == m.CanonicalStorageKey ? m.SizeBytes : 0L)
+                        : 0L),
+                g.Sum(m =>
+                    m.ProxyStorageKey != null
+                        ? m.ProxySizeBytes ?? (m.StorageKey == m.ProxyStorageKey ? m.SizeBytes : 0L)
+                        : 0L),
+                g.Sum(m =>
+                    m.ThumbnailStorageKey != null
+                        ? m.ThumbnailSizeBytes ?? (m.StorageKey == m.ThumbnailStorageKey ? m.SizeBytes : 0L)
+                        : 0L)))
             .FirstOrDefaultAsync(cancellationToken)
             ?? StorageAggregate.Empty;
     }

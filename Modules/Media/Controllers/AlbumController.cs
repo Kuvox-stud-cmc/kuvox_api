@@ -32,6 +32,13 @@ public sealed class AlbumController(IAlbumService albumService) : ControllerBase
         return Ok(albums);
     }
 
+    [HttpGet("shared")]
+    public async Task<ActionResult<IEnumerable<AlbumDto>>> SharedAlbums(CancellationToken cancellationToken = default)
+    {
+        var albums = await albumService.ListSharedWithMeAsync(Caller().UserId, cancellationToken);
+        return Ok(albums);
+    }
+
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteAlbum(
         Guid id,
@@ -51,6 +58,37 @@ public sealed class AlbumController(IAlbumService albumService) : ControllerBase
         var album = await albumService.SetFavoriteAsync(id, Caller(), request, cancellationToken);
         return Ok(album);
     }
+
+    [HttpPost("{id:guid}/share")]
+    public async Task<IActionResult> ShareAlbum(
+        Guid id,
+        [FromBody] ShareAlbumRequest request,
+        CancellationToken cancellationToken)
+    {
+        await albumService.ShareAsync(id, Caller(), request, cancellationToken);
+        return NoContent();
+    }
+
+    [HttpDelete("{id:guid}/share/{userId:guid}")]
+    public async Task<IActionResult> UnshareAlbum(
+        Guid id,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        await albumService.UnshareAsync(id, Caller(), userId, cancellationToken);
+        return NoContent();
+    }
+
+    [HttpGet("{id:guid}/access")]
+    public Task<IReadOnlyList<AlbumAccessMemberDto>> Access(Guid id, CancellationToken cancellationToken) =>
+        albumService.ListAccessAsync(id, Caller(), cancellationToken);
+
+    [HttpPut("{id:guid}/access")]
+    public Task<IReadOnlyList<AlbumAccessMemberDto>> UpdateAccess(
+        Guid id,
+        UpdateAlbumAccessRequest request,
+        CancellationToken cancellationToken) =>
+        albumService.UpdateAccessAsync(id, Caller(), request, cancellationToken);
 
     [HttpGet("{id:guid}/media")]
     public async Task<ActionResult<PagedResult<MediaDto>>> ListAlbumMedia(

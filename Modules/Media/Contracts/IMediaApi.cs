@@ -4,4 +4,6 @@ namespace Kuvox.Api.Modules.Media.Contracts;
 public interface IMediaApi
 {
     Task<MediaSummary?> GetSummaryAsync(Guid mediaId, CancellationToken cancellationToken = default);
+
+    Task<MediaWorkspaceUsageSummary> GetWorkspaceUsageAsync(Guid ownerId, Enums.OwnerKind ownerKind, CancellationToken cancellationToken = default);
 }

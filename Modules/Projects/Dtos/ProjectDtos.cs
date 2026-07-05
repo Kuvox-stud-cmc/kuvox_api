@@ -6,6 +6,8 @@ public sealed record ProjectDto(
     Guid Id,
     Guid OwnerId,
     OwnerKind OwnerKind,
+    string? OwnerEmail,
+    string? OwnerDisplayName,
     ProjectKind Kind,
     string Name,
     string? Description,
@@ -13,6 +15,7 @@ public sealed record ProjectDto(
     string Status,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
+    int MediaCount,
     bool IsStarred);
 
 /// <summary>
@@ -25,6 +28,18 @@ public sealed record UpdateProjectRequest(string Name, string? Description, stri
 
 /// <summary>Grants another user (looked up by email) access to a project.</summary>
 public sealed record ShareProjectRequest(string Email, ProjectRole Role);
+
+public sealed record UpdateProjectAccessRequest(Guid UserId, ProjectRole? Role, bool IsHidden);
+
+public sealed record ProjectAccessMemberDto(
+    Guid UserId,
+    string Email,
+    string DisplayName,
+    string StudioRole,
+    ProjectRole EffectiveRole,
+    ProjectRole? OverrideRole,
+    bool IsHidden,
+    bool CanManage);
 
 public sealed record ToggleProjectStarRequest(bool IsStarred);
 

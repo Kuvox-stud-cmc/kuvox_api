@@ -19,4 +19,6 @@ public sealed class ProjectUser : JunctionBaseEntity
     public required bool IsStarred { get; set; } = false;
 
     public required bool IsTemplate { get; set; } = false;
+
+    public required bool IsHidden { get; set; } = false;
 }

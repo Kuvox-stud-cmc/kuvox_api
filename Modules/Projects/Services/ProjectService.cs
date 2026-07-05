@@ -1,4 +1,5 @@
 using Kuvox.Api.Modules.Auth.Contracts;
+using Kuvox.Api.Modules.Notifications;
 using Kuvox.Api.Modules.Projects.Dtos;
 using Kuvox.Api.Modules.Projects.Enums;
 using Kuvox.Api.Modules.Projects.Models;
@@ -14,7 +15,7 @@ namespace Kuvox.Api.Modules.Projects.Services;
 /// <see cref="IProjectRepository"/>, resolves invitees through the Auth public contract
 /// (<see cref="IAuthApi"/>, Rule 2).
 /// </summary>
-internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
+internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth, INotificationsApi notifications)
     : IProjectService
 {
     /// <summary>Trash auto-purge window (kept in sync with <c>TrashPurgeService</c>).</summary>
@@ -25,8 +26,18 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
     {
         (page, pageSize) = Normalize(page, pageSize);
         var (items, total) = await projects.ListByWorkspaceAsync(OwnerKindOf(scope), scope.OwnerId, page, pageSize, cancellationToken);
+        if (scope.IsStudio && !caller.IsStudioOwner(scope.OwnerId))
+        {
+            items = await FilterVisibleAsync(items, caller, cancellationToken);
+            total = items.Count;
+        }
         var flags = await projects.GetStarFlagsAsync(items.Select(project => project.Id), caller.UserId, cancellationToken);
-        return new PagedResult<ProjectDto>(items.Select(project => ToDto(project, flags.GetValueOrDefault(project.Id))).ToList(), page, pageSize, total);
+        var mediaCounts = await projects.GetMediaCountsAsync(items.Select(project => project.Id), cancellationToken);
+        return new PagedResult<ProjectDto>(
+            items.Select(project => ToDto(project, flags.GetValueOrDefault(project.Id), mediaCounts.GetValueOrDefault(project.Id))).ToList(),
+            page,
+            pageSize,
+            total);
     }
 
     public async Task<PagedResult<ProjectDto>> ListSharedWithMeAsync(
@@ -35,14 +46,29 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
         (page, pageSize) = Normalize(page, pageSize);
         var (items, total) = await projects.ListSharedWithUserAsync(userId, page, pageSize, cancellationToken);
         var flags = await projects.GetStarFlagsAsync(items.Select(item => item.Project.Id), userId, cancellationToken);
-        return new PagedResult<ProjectDto>(items.Select(item => ToDto(item.Project, flags.GetValueOrDefault(item.Project.Id))).ToList(), page, pageSize, total);
+        var mediaCounts = await projects.GetMediaCountsAsync(items.Select(item => item.Project.Id), cancellationToken);
+        var owners = await GetUserOwnerSummariesAsync(items.Select(item => item.Project), cancellationToken);
+        return new PagedResult<ProjectDto>(
+            items.Select(item => ToDto(
+                item.Project,
+                flags.GetValueOrDefault(item.Project.Id),
+                mediaCounts.GetValueOrDefault(item.Project.Id),
+                owners.GetValueOrDefault(item.Project.OwnerId))).ToList(),
+            page,
+            pageSize,
+            total);
     }
 
     public async Task<PagedResult<ProjectTrashItemDto>> ListTrashAsync(
-        WorkspaceScope scope, int page, int pageSize, CancellationToken cancellationToken = default)
+        WorkspaceScope scope, CallerContext caller, int page, int pageSize, CancellationToken cancellationToken = default)
     {
         (page, pageSize) = Normalize(page, pageSize);
         var (items, total) = await projects.ListTrashAsync(OwnerKindOf(scope), scope.OwnerId, page, pageSize, cancellationToken);
+        if (scope.IsStudio && !caller.IsStudioOwner(scope.OwnerId))
+        {
+            items = await FilterVisibleAsync(items, caller, cancellationToken);
+            total = items.Count;
+        }
         return new PagedResult<ProjectTrashItemDto>(items.Select(ToTrashDto).ToList(), page, pageSize, total);
     }
 
@@ -55,7 +81,8 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
         }
 
         var projectUser = await projects.GetProjectUserAsync(project.Id, caller.UserId, cancellationToken);
-        return ToDto(project, projectUser?.IsStarred ?? false);
+        var mediaCount = await GetMediaCountAsync(project.Id, cancellationToken);
+        return ToDto(project, projectUser?.IsStarred ?? false, mediaCount);
     }
 
     public async Task<ProjectDto> CreateAsync(
@@ -92,7 +119,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
         Guid id, CallerContext caller, UpdateProjectRequest request, CancellationToken cancellationToken = default)
     {
         var project = await LoadLiveAsync(id, cancellationToken);
-        RequireWrite(project, caller);
+        await RequireWriteAsync(project, caller, cancellationToken);
 
         project.Name = request.Name.Trim();
         project.Description = request.Description?.Trim();
@@ -101,7 +128,8 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
         await projects.SaveChangesAsync(cancellationToken);
 
         var projectUser = await projects.GetProjectUserAsync(project.Id, caller.UserId, cancellationToken);
-        return ToDto(project, projectUser?.IsStarred ?? false);
+        var mediaCount = await GetMediaCountAsync(project.Id, cancellationToken);
+        return ToDto(project, projectUser?.IsStarred ?? false, mediaCount);
     }
 
     public async Task<ProjectDto> SetStarAsync(
@@ -127,7 +155,8 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
                 await projects.SaveChangesAsync(cancellationToken);
             }
 
-            return ToDto(project, projectUser?.IsStarred ?? false);
+            var mediaCount = await GetMediaCountAsync(project.Id, cancellationToken);
+            return ToDto(project, projectUser?.IsStarred ?? false, mediaCount);
         }
 
         if (projectUser.IsStarred != request.IsStarred)
@@ -137,14 +166,20 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
             await projects.SaveChangesAsync(cancellationToken);
         }
 
-        return ToDto(project, projectUser.IsStarred);
+        var updatedMediaCount = await GetMediaCountAsync(project.Id, cancellationToken);
+        return ToDto(project, projectUser.IsStarred, updatedMediaCount);
     }
 
     public async Task ShareAsync(
         Guid id, CallerContext caller, ShareProjectRequest request, CancellationToken cancellationToken = default)
     {
+        if (request.Role == ProjectRole.Owner)
+        {
+            throw DomainException.BadRequest("Choose Viewer or Editor access.");
+        }
+
         var project = await LoadLiveAsync(id, cancellationToken);
-        RequireWrite(project, caller);
+        await RequireWriteAsync(project, caller, cancellationToken);
 
         var invitee = await auth.GetSummaryByEmailAsync(request.Email.Trim().ToLowerInvariant(), cancellationToken)
             ?? throw DomainException.NotFound("No user with that email.");
@@ -162,16 +197,24 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
         else
         {
             existing.Role = request.Role;
+            existing.IsHidden = false;
             existing.UpdatedAt = DateTimeOffset.UtcNow;
         }
 
         await projects.SaveChangesAsync(cancellationToken);
+        await notifications.CreateAsync(
+            invitee.Id,
+            null,
+            "ProjectAccessChanged",
+            $"A project was shared with you: {project.Name}.",
+            project.Kind == ProjectKind.Video ? $"/editor/{project.Id}" : $"/projects/{project.Id}",
+            cancellationToken);
     }
 
     public async Task UnshareAsync(Guid id, CallerContext caller, Guid userId, CancellationToken cancellationToken = default)
     {
         var project = await LoadLiveAsync(id, cancellationToken);
-        RequireWrite(project, caller);
+        await RequireWriteAsync(project, caller, cancellationToken);
 
         var share = await projects.GetProjectUserAsync(project.Id, userId, cancellationToken);
         if (share is not null)
@@ -181,10 +224,56 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
         }
     }
 
+    public async Task<IReadOnlyList<ProjectAccessMemberDto>> ListAccessAsync(
+        Guid id,
+        CallerContext caller,
+        CancellationToken cancellationToken = default)
+    {
+        var project = await LoadLiveAsync(id, cancellationToken);
+        RequireStudioAccessManage(project, caller);
+        return await BuildAccessRowsAsync(project, caller, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ProjectAccessMemberDto>> UpdateAccessAsync(
+        Guid id,
+        CallerContext caller,
+        UpdateProjectAccessRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var project = await LoadLiveAsync(id, cancellationToken);
+        RequireStudioAccessManage(project, caller);
+        var target = await auth.GetStudioMemberAsync(project.OwnerId, request.UserId, cancellationToken)
+            ?? throw DomainException.NotFound("Studio member not found.");
+
+        RequireCanManageTarget(caller, project.OwnerId, target.Role);
+        var role = request.Role ?? DefaultProjectRoleForStudioRole(target.Role);
+        if (role == ProjectRole.Owner)
+        {
+            throw DomainException.BadRequest("Choose Viewer or Editor access.");
+        }
+
+        var access = await projects.GetProjectUserAsync(project.Id, request.UserId, cancellationToken);
+        if (access is null)
+        {
+            access = CreateProjectUser(project.Id, request.UserId, role);
+            access.IsHidden = request.IsHidden;
+            await projects.AddProjectUserAsync(access, cancellationToken);
+        }
+        else
+        {
+            access.Role = role;
+            access.IsHidden = request.IsHidden;
+            access.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
+        await projects.SaveChangesAsync(cancellationToken);
+        return await BuildAccessRowsAsync(project, caller, cancellationToken);
+    }
+
     public async Task SoftDeleteAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default)
     {
         var project = await LoadLiveAsync(id, cancellationToken);
-        RequireWrite(project, caller);
+        await RequireWriteAsync(project, caller, cancellationToken);
 
         project.DeletedAt = DateTimeOffset.UtcNow;
         project.UpdatedAt = DateTimeOffset.UtcNow;
@@ -195,7 +284,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
     {
         var project = await projects.GetByIdAsync(id, cancellationToken)
             ?? throw DomainException.NotFound("Project not found.");
-        RequireTrashManage(project, caller);
+        await RequireTrashManageAsync(project, caller, cancellationToken);
 
         project.DeletedAt = null;
         project.UpdatedAt = DateTimeOffset.UtcNow;
@@ -206,7 +295,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
     {
         var project = await projects.GetByIdAsync(id, cancellationToken)
             ?? throw DomainException.NotFound("Project not found.");
-        RequireTrashManage(project, caller);
+        await RequireTrashManageAsync(project, caller, cancellationToken);
 
         projects.Remove(project);
         await projects.SaveChangesAsync(cancellationToken);
@@ -251,15 +340,84 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
         }
     }
 
+    private async Task RequireWriteAsync(Project project, CallerContext caller, CancellationToken cancellationToken)
+    {
+        if (!await CanWriteAsync(project, caller, cancellationToken))
+        {
+            throw DomainException.Forbidden("You do not have permission to modify this project.");
+        }
+    }
+
+    private async Task RequireTrashManageAsync(Project project, CallerContext caller, CancellationToken cancellationToken)
+    {
+        if (project.OwnerKind == OwnerKind.Studio && !await CanAccessAsync(project, caller, cancellationToken))
+        {
+            throw DomainException.Forbidden("You do not have access to this project.");
+        }
+
+        if (!CanManageTrash(project, caller))
+        {
+            throw DomainException.Forbidden("You do not have permission to manage Studio trash.");
+        }
+    }
+
+    private async Task<bool> CanWriteAsync(Project project, CallerContext caller, CancellationToken cancellationToken)
+    {
+        if (project.OwnerKind == OwnerKind.User)
+        {
+            if (caller.OwnsAsUser(project.OwnerId))
+            {
+                return true;
+            }
+
+            var share = await projects.GetProjectUserAsync(project.Id, caller.UserId, cancellationToken);
+            return share is { IsHidden: false, Role: ProjectRole.Owner or ProjectRole.Editor };
+        }
+
+        if (caller.IsStudioOwner(project.OwnerId))
+        {
+            return true;
+        }
+
+        var access = await projects.GetProjectUserAsync(project.Id, caller.UserId, cancellationToken);
+        if (access is { IsHidden: true } or { Role: ProjectRole.Viewer })
+        {
+            return false;
+        }
+
+        if (access is { Role: ProjectRole.Owner or ProjectRole.Editor })
+        {
+            return true;
+        }
+
+        return caller.CanWriteStudioContent(project.OwnerId);
+    }
+
     private async Task<bool> CanAccessAsync(Project project, CallerContext caller, CancellationToken cancellationToken)
     {
+        if (project.OwnerKind == OwnerKind.Studio)
+        {
+            if (caller.IsStudioOwner(project.OwnerId))
+            {
+                return true;
+            }
+
+            if (!caller.InStudio(project.OwnerId))
+            {
+                return false;
+            }
+
+            var studioOverride = await projects.GetProjectUserAsync(project.Id, caller.UserId, cancellationToken);
+            return studioOverride?.IsHidden != true;
+        }
+
         if (CanRead(project, caller))
         {
             return true;
         }
 
         // Otherwise the caller needs an explicit share row.
-        return await projects.GetProjectUserAsync(project.Id, caller.UserId, cancellationToken) is not null;
+        return await projects.GetProjectUserAsync(project.Id, caller.UserId, cancellationToken) is { IsHidden: false };
     }
 
     private static OwnerKind OwnerKindOf(WorkspaceScope scope) => scope.IsStudio ? OwnerKind.Studio : OwnerKind.User;
@@ -268,10 +426,129 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth)
         (Math.Max(1, page), Math.Clamp(pageSize, 1, 100));
 
     private static ProjectUser CreateProjectUser(Guid projectId, Guid userId, ProjectRole role) =>
-        new() { ProjectId = projectId, UserId = userId, Role = role, IsStarred = false, IsTemplate = false };
+        new() { ProjectId = projectId, UserId = userId, Role = role, IsStarred = false, IsTemplate = false, IsHidden = false };
 
-    private static ProjectDto ToDto(Project p, bool isStarred = false) =>
-        new(p.Id, p.OwnerId, p.OwnerKind, p.Kind, p.Name, p.Description, p.DurationSeconds, p.Status, p.CreatedAt, p.UpdatedAt, isStarred);
+    private async Task<IReadOnlyList<Project>> FilterVisibleAsync(
+        IReadOnlyList<Project> items,
+        CallerContext caller,
+        CancellationToken cancellationToken)
+    {
+        var visible = new List<Project>();
+        foreach (var item in items)
+        {
+            if (await CanAccessAsync(item, caller, cancellationToken))
+            {
+                visible.Add(item);
+            }
+        }
+
+        return visible;
+    }
+
+    private async Task<IReadOnlyList<ProjectAccessMemberDto>> BuildAccessRowsAsync(
+        Project project,
+        CallerContext caller,
+        CancellationToken cancellationToken)
+    {
+        var members = await auth.ListStudioMembersAsync(project.OwnerId, cancellationToken);
+        var rows = new List<ProjectAccessMemberDto>();
+        foreach (var member in members)
+        {
+            var access = await projects.GetProjectUserAsync(project.Id, member.UserId, cancellationToken);
+            rows.Add(new ProjectAccessMemberDto(
+                member.UserId,
+                member.Email,
+                member.DisplayName,
+                member.Role,
+                access?.Role ?? DefaultProjectRoleForStudioRole(member.Role),
+                access?.Role,
+                access?.IsHidden ?? false,
+                CanManageTarget(caller, project.OwnerId, member.Role)));
+        }
+
+        return rows;
+    }
+
+    private static void RequireStudioAccessManage(Project project, CallerContext caller)
+    {
+        if (project.OwnerKind != OwnerKind.Studio)
+        {
+            throw DomainException.BadRequest("Item access overrides are only available for Studio projects.");
+        }
+
+        if (!caller.CanManageStudioAccess(project.OwnerId))
+        {
+            throw DomainException.Forbidden("You do not have permission to manage item access.");
+        }
+    }
+
+    private static void RequireCanManageTarget(CallerContext caller, Guid studioId, string targetRole)
+    {
+        if (!CanManageTarget(caller, studioId, targetRole))
+        {
+            throw DomainException.Forbidden("You cannot restrict a member with that Studio role.");
+        }
+    }
+
+    private static bool CanManageTarget(CallerContext caller, Guid studioId, string targetRole)
+    {
+        if (caller.IsStudioOwner(studioId))
+        {
+            return !string.Equals(targetRole, "Owner", StringComparison.Ordinal);
+        }
+
+        return caller.IsStudioAdmin(studioId)
+            && !string.Equals(targetRole, "Owner", StringComparison.Ordinal)
+            && !string.Equals(targetRole, "Admin", StringComparison.Ordinal);
+    }
+
+    private static ProjectRole DefaultProjectRoleForStudioRole(string studioRole) =>
+        string.Equals(studioRole, "Viewer", StringComparison.Ordinal)
+            ? ProjectRole.Viewer
+            : ProjectRole.Editor;
+
+    private async Task<int> GetMediaCountAsync(Guid projectId, CancellationToken cancellationToken)
+    {
+        var counts = await projects.GetMediaCountsAsync([projectId], cancellationToken);
+        return counts.GetValueOrDefault(projectId);
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, UserSummary>> GetUserOwnerSummariesAsync(
+        IEnumerable<Project> projectItems,
+        CancellationToken cancellationToken)
+    {
+        var owners = new Dictionary<Guid, UserSummary>();
+        foreach (var ownerId in projectItems
+            .Where(item => item.OwnerKind == OwnerKind.User)
+            .Select(item => item.OwnerId)
+            .Distinct())
+        {
+            var summary = await auth.GetSummaryAsync(ownerId, cancellationToken);
+            if (summary is not null)
+            {
+                owners[ownerId] = summary;
+            }
+        }
+
+        return owners;
+    }
+
+    private static ProjectDto ToDto(Project p, bool isStarred = false, int mediaCount = 0, UserSummary? owner = null) =>
+        new(
+            p.Id,
+            p.OwnerId,
+            p.OwnerKind,
+            owner?.Email,
+            owner?.DisplayName,
+            p.Kind,
+            p.Name,
+            p.Description,
+            p.DurationSeconds,
+            p.Status,
+            p.CreatedAt,
+            p.UpdatedAt,
+            mediaCount,
+            isStarred);
 
     private static ProjectTrashItemDto ToTrashDto(Project p)
     {

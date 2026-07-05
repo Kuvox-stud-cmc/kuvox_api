@@ -20,6 +20,12 @@ public interface IAuthApi
 
     /// <summary>Returns the user's plan name and storage quota, or <c>null</c> if not found.</summary>
     Task<UserPlanLimits?> GetPlanLimitsAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<StudioMemberSummary>> ListStudioMembersAsync(Guid studioId, CancellationToken cancellationToken = default);
+
+    Task<StudioMemberSummary?> GetStudioMemberAsync(Guid studioId, Guid userId, CancellationToken cancellationToken = default);
 }
 
 public sealed record UserPlanLimits(string Plan, long StorageBytes);
+
+public sealed record StudioMemberSummary(Guid UserId, string Email, string DisplayName, string Role);

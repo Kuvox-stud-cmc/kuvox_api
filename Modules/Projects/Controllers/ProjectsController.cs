@@ -35,7 +35,7 @@ public sealed class ProjectsController(IProjectService projects) : ControllerBas
     [HttpGet("trash")]
     public Task<PagedResult<ProjectTrashItemDto>> Trash(
         [FromQuery] Guid? studioId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default) =>
-        projects.ListTrashAsync(ResolveWorkspace(studioId), page, pageSize, ct);
+        projects.ListTrashAsync(ResolveWorkspace(studioId), Caller(), page, pageSize, ct);
 
     [HttpGet("{id:guid}")]
     public Task<ProjectDto> Get(Guid id, CancellationToken ct) => projects.GetAsync(id, Caller(), ct);
@@ -65,6 +65,14 @@ public sealed class ProjectsController(IProjectService projects) : ControllerBas
         await projects.UnshareAsync(id, Caller(), userId, ct);
         return NoContent();
     }
+
+    [HttpGet("{id:guid}/access")]
+    public Task<IReadOnlyList<ProjectAccessMemberDto>> Access(Guid id, CancellationToken ct) =>
+        projects.ListAccessAsync(id, Caller(), ct);
+
+    [HttpPut("{id:guid}/access")]
+    public Task<IReadOnlyList<ProjectAccessMemberDto>> UpdateAccess(Guid id, UpdateProjectAccessRequest request, CancellationToken ct) =>
+        projects.UpdateAccessAsync(id, Caller(), request, ct);
 
     /// <summary>Move a project to Trash (soft-delete).</summary>
     [HttpDelete("{id:guid}")]

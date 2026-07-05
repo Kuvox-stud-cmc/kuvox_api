@@ -66,6 +66,7 @@ The API will be available at `https://localhost:5001` (or `http://localhost:5000
 | `Projects`  | `projects.projects`, `projects.project_images`, `projects.project_audios`, `projects.project_videos` | CRUD for projects and project/media associations                        |
 | `Media`     | `media.*`                                                             | Media library metadata, albums, sharing, Studio-scoped media records    |
 | `Notifications` | `notifications.notifications`                                    | In-app notifications, unread counts, read/archive/delete lifecycle      |
+| `Tasks`     | `tasks.task_issues`, `tasks.task_assignees`, `tasks.task_milestones`, `tasks.task_labels`, `tasks.task_issue_labels` | Studio task, review, milestone, label, and assignment tracking |
 | `Timelines` | `timelines.{timelines,timeline_revisions,render_jobs,command_history}`| Timeline state, revisions (JSONB ops), render jobs, NL command history  |
 | `Shared`    | — (no tables)                                                         | Shared kernel: `BaseEntity`, common DTOs, MediatR markers, health, 501 handler |
 
@@ -83,6 +84,11 @@ are enforced (by convention within the single assembly — see the caveat below)
 4. **Cross-module events via MediatR** — events are `INotification` records in the
    publisher's `Contracts/`; subscribers implement `INotificationHandler<>` internally
    (e.g. `MediaDeletedEvent` -> Projects association cleanup handlers).
+
+Tasks follows the intended convention: its public cross-module surface lives in
+`Modules/Tasks/Contracts`, its implementation types are internal, and assignment/review
+notification rows are created by Notifications handlers subscribed to Tasks MediatR
+events rather than by direct Tasks -> Notifications API calls.
 
 ### Implementation status
 
@@ -125,7 +131,8 @@ show at least one consumer while uploads are being optimized.
 > **Single-assembly caveat:** because every module lives in one `api.csproj`, `internal`
 > and the `Contracts`-only boundary are conventions, not compiler-enforced isolation. To
 > make Rule 1 a build-time check, add an architecture test (e.g. NetArchTest) asserting no
-> module depends on another module's non-`Contracts` namespace.
+> module depends on another module's non-`Contracts` namespace. Tasks is the current
+> example of the intended convention inside the single assembly.
 
 ## Environment variables
 

@@ -34,12 +34,14 @@ public sealed class MediaController(IMediaService media) : ControllerBase
     [HttpGet("trash")]
     public Task<PagedResult<MediaTrashItemDto>> Trash(
         [FromQuery] Guid? studioId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default) =>
-        media.ListTrashAsync(ResolveWorkspace(studioId), page, pageSize, ct);
+        media.ListTrashAsync(ResolveWorkspace(studioId), Caller(), page, pageSize, ct);
 
-    /// <summary>The caller's personal account storage usage, including soft-deleted media.</summary>
+    /// <summary>The current workspace's storage usage, including soft-deleted media.</summary>
     [HttpGet("storage-usage")]
-    public Task<MediaStorageUsageDto> StorageUsage(CancellationToken ct = default) =>
-        media.GetPersonalStorageUsageAsync(Caller(), ct);
+    public Task<MediaStorageUsageDto> StorageUsage(
+        [FromQuery] Guid? studioId,
+        CancellationToken ct = default) =>
+        media.GetStorageUsageAsync(ResolveWorkspace(studioId), ct);
 
     [HttpGet("{id:guid}")]
     public Task<MediaDto> Get(Guid id, CancellationToken ct) => media.GetAsync(id, Caller(), ct);
@@ -90,6 +92,14 @@ public sealed class MediaController(IMediaService media) : ControllerBase
         await media.UnshareAsync(id, Caller(), userId, ct);
         return NoContent();
     }
+
+    [HttpGet("{id:guid}/access")]
+    public Task<IReadOnlyList<MediaAccessMemberDto>> Access(Guid id, CancellationToken ct) =>
+        media.ListAccessAsync(id, Caller(), ct);
+
+    [HttpPut("{id:guid}/access")]
+    public Task<IReadOnlyList<MediaAccessMemberDto>> UpdateAccess(Guid id, UpdateMediaAccessRequest request, CancellationToken ct) =>
+        media.UpdateAccessAsync(id, Caller(), request, ct);
 
     /// <summary>Move a media item to Trash (soft-delete).</summary>
     [HttpDelete("{id:guid}")]

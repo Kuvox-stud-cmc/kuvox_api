@@ -9,7 +9,7 @@ namespace Kuvox.Api.Modules.Auth.Services;
 /// modules use. Kept thin and functional (unlike <see cref="AuthService"/>) so cross-module
 /// lookups work today; it only exposes the shareable <see cref="UserSummary"/> projection.
 /// </summary>
-internal sealed class AuthApi(IUserRepository users) : IAuthApi
+internal sealed class AuthApi(IUserRepository users, IStudioRepository studios) : IAuthApi
 {
     public Task<bool> UserExistsAsync(Guid userId, CancellationToken cancellationToken = default) =>
         users.ExistsAsync(userId, cancellationToken);
@@ -32,6 +32,29 @@ internal sealed class AuthApi(IUserRepository users) : IAuthApi
         return user is null
             ? null
             : new UserPlanLimits(user.Plan.ToString(), StorageBytesFor(user.Plan));
+    }
+
+    public async Task<IReadOnlyList<StudioMemberSummary>> ListStudioMembersAsync(
+        Guid studioId,
+        CancellationToken cancellationToken = default)
+    {
+        var members = await studios.ListMembersAsync(studioId, cancellationToken);
+        return members
+            .Select(member => new StudioMemberSummary(
+                member.User.Id,
+                member.User.Email,
+                member.User.DisplayName,
+                member.Role.ToString()))
+            .ToList();
+    }
+
+    public async Task<StudioMemberSummary?> GetStudioMemberAsync(
+        Guid studioId,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var members = await ListStudioMembersAsync(studioId, cancellationToken);
+        return members.FirstOrDefault(member => member.UserId == userId);
     }
 
     private static long StorageBytesFor(UserPlan plan) =>

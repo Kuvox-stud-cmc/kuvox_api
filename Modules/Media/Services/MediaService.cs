@@ -4,6 +4,7 @@ using Kuvox.Api.Modules.Media.Dtos;
 using Kuvox.Api.Modules.Media.Enums;
 using Kuvox.Api.Modules.Media.Models;
 using Kuvox.Api.Modules.Media.Repositories;
+using Kuvox.Api.Modules.Notifications;
 using Kuvox.Api.Modules.Shared.Dtos;
 using Kuvox.Api.Modules.Shared.Infrastructure;
 using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
@@ -21,7 +22,9 @@ namespace Kuvox.Api.Modules.Media.Services;
 /// </summary>
 internal sealed class MediaService(
     IMediaRepository media, 
+    IAlbumRepository albums,
     IAuthApi auth, 
+    INotificationsApi notifications,
     IMediator mediator,
     IFileStorageService storage,
     IMediaRealtimeNotifier realtime,
@@ -38,6 +41,11 @@ internal sealed class MediaService(
     {
         (page, pageSize) = Normalize(page, pageSize);
         var (items, total) = await media.ListByWorkspaceAsync(OwnerKindOf(scope), scope.OwnerId, page, pageSize, cancellationToken);
+        if (scope.IsStudio && !caller.IsStudioOwner(scope.OwnerId))
+        {
+            items = await FilterVisibleAsync(items, caller, cancellationToken);
+            total = items.Count;
+        }
         var flags = await media.GetFavoriteFlagsAsync(items.Select(item => item.Id), caller.UserId, cancellationToken);
         return new PagedResult<MediaDto>(items.Select(item => ToDto(item, flags.GetValueOrDefault(item.Id))).ToList(), page, pageSize, total);
     }
@@ -48,14 +56,27 @@ internal sealed class MediaService(
         (page, pageSize) = Normalize(page, pageSize);
         var (items, total) = await media.ListSharedWithUserAsync(userId, page, pageSize, cancellationToken);
         var flags = await media.GetFavoriteFlagsAsync(items.Select(item => item.Media.Id), userId, cancellationToken);
-        return new PagedResult<MediaDto>(items.Select(item => ToDto(item.Media, flags.GetValueOrDefault(item.Media.Id))).ToList(), page, pageSize, total);
+        var owners = await GetUserOwnerSummariesAsync(items.Select(item => item.Media), cancellationToken);
+        return new PagedResult<MediaDto>(
+            items.Select(item => ToDto(
+                item.Media,
+                flags.GetValueOrDefault(item.Media.Id),
+                owners.GetValueOrDefault(item.Media.OwnerId))).ToList(),
+            page,
+            pageSize,
+            total);
     }
 
     public async Task<PagedResult<MediaTrashItemDto>> ListTrashAsync(
-        WorkspaceScope scope, int page, int pageSize, CancellationToken cancellationToken = default)
+        WorkspaceScope scope, CallerContext caller, int page, int pageSize, CancellationToken cancellationToken = default)
     {
         (page, pageSize) = Normalize(page, pageSize);
         var (items, total) = await media.ListTrashAsync(OwnerKindOf(scope), scope.OwnerId, page, pageSize, cancellationToken);
+        if (scope.IsStudio && !caller.IsStudioOwner(scope.OwnerId))
+        {
+            items = await FilterVisibleAsync(items, caller, cancellationToken);
+            total = items.Count;
+        }
         return new PagedResult<MediaTrashItemDto>(items.Select(ToTrashDto).ToList(), page, pageSize, total);
     }
 
@@ -326,8 +347,17 @@ internal sealed class MediaService(
         CallerContext caller,
         CancellationToken cancellationToken = default)
     {
-        var plan = await ResolveUserStoragePlanAsync(caller.UserId, cancellationToken);
-        var usage = await media.GetStorageUsageAsync(OwnerKind.User, caller.UserId, cancellationToken);
+        return await GetStorageUsageAsync(
+            new WorkspaceScope(IsStudio: false, OwnerId: caller.UserId),
+            cancellationToken);
+    }
+
+    public async Task<MediaStorageUsageDto> GetStorageUsageAsync(
+        WorkspaceScope scope,
+        CancellationToken cancellationToken = default)
+    {
+        var plan = await ResolveStoragePlanAsync(scope, cancellationToken);
+        var usage = await media.GetStorageUsageAsync(OwnerKindOf(scope), scope.OwnerId, cancellationToken);
         return ToStorageUsageDto(plan.Plan, plan.StorageBytes, usage);
     }
 
@@ -580,8 +610,13 @@ internal sealed class MediaService(
     public async Task ShareAsync(
         Guid id, CallerContext caller, ShareMediaRequest request, CancellationToken cancellationToken = default)
     {
+        if (request.Role == Permission.Owner)
+        {
+            throw DomainException.BadRequest("Choose Viewer or Editor access.");
+        }
+
         var item = await LoadLiveAsync(id, cancellationToken);
-        RequireWrite(item, caller);
+        await RequireWriteAsync(item, caller, cancellationToken);
 
         var invitee = await auth.GetSummaryByEmailAsync(request.Email.Trim().ToLowerInvariant(), cancellationToken)
             ?? throw DomainException.NotFound("No user with that email.");
@@ -600,16 +635,24 @@ internal sealed class MediaService(
         else
         {
             existing.Role = request.Role;
+            existing.IsHidden = false;
             existing.UpdatedAt = DateTimeOffset.UtcNow;
         }
 
         await media.SaveChangesAsync(cancellationToken);
+        await notifications.CreateAsync(
+            invitee.Id,
+            null,
+            "MediaAccessChanged",
+            $"Media was shared with you: {item.Filename}.",
+            "/dashboard/shared-assets",
+            cancellationToken);
     }
 
     public async Task UnshareAsync(Guid id, CallerContext caller, Guid userId, CancellationToken cancellationToken = default)
     {
         var item = await LoadLiveAsync(id, cancellationToken);
-        RequireWrite(item, caller);
+        await RequireWriteAsync(item, caller, cancellationToken);
 
         var share = await media.GetMediaUserAsync(item.Id, userId, cancellationToken);
         if (share is not null)
@@ -619,10 +662,56 @@ internal sealed class MediaService(
         }
     }
 
+    public async Task<IReadOnlyList<MediaAccessMemberDto>> ListAccessAsync(
+        Guid id,
+        CallerContext caller,
+        CancellationToken cancellationToken = default)
+    {
+        var item = await LoadLiveAsync(id, cancellationToken);
+        RequireStudioAccessManage(item, caller);
+        return await BuildAccessRowsAsync(item, caller, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<MediaAccessMemberDto>> UpdateAccessAsync(
+        Guid id,
+        CallerContext caller,
+        UpdateMediaAccessRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var item = await LoadLiveAsync(id, cancellationToken);
+        RequireStudioAccessManage(item, caller);
+        var target = await auth.GetStudioMemberAsync(item.OwnerId, request.UserId, cancellationToken)
+            ?? throw DomainException.NotFound("Studio member not found.");
+
+        RequireCanManageTarget(caller, item.OwnerId, target.Role);
+        var role = request.Role ?? DefaultPermissionForStudioRole(target.Role);
+        if (role == Permission.Owner)
+        {
+            throw DomainException.BadRequest("Choose Viewer or Editor access.");
+        }
+
+        var access = await media.GetMediaUserAsync(item.Id, request.UserId, cancellationToken);
+        if (access is null)
+        {
+            access = CreateMediaUser(item, request.UserId, role);
+            access.IsHidden = request.IsHidden;
+            await media.AddMediaUserAsync(access, cancellationToken);
+        }
+        else
+        {
+            access.Role = role;
+            access.IsHidden = request.IsHidden;
+            access.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
+        await media.SaveChangesAsync(cancellationToken);
+        return await BuildAccessRowsAsync(item, caller, cancellationToken);
+    }
+
     public async Task SoftDeleteAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default)
     {
         var item = await LoadLiveAsync(id, cancellationToken);
-        RequireWrite(item, caller);
+        await RequireWriteAsync(item, caller, cancellationToken);
 
         item.DeletedAt = DateTimeOffset.UtcNow;
         item.UpdatedAt = DateTimeOffset.UtcNow;
@@ -633,7 +722,7 @@ internal sealed class MediaService(
     {
         var item = await media.GetByIdAsync(id, cancellationToken)
             ?? throw DomainException.NotFound("Media not found.");
-        RequireTrashManage(item, caller);
+        await RequireTrashManageAsync(item, caller, cancellationToken);
 
         item.DeletedAt = null;
         item.UpdatedAt = DateTimeOffset.UtcNow;
@@ -644,7 +733,7 @@ internal sealed class MediaService(
     {
         var item = await media.GetByIdAsync(id, cancellationToken)
             ?? throw DomainException.NotFound("Media not found.");
-        RequireTrashManage(item, caller);
+        await RequireTrashManageAsync(item, caller, cancellationToken);
 
         media.Remove(item);
         await media.SaveChangesAsync(cancellationToken);
@@ -948,14 +1037,90 @@ internal sealed class MediaService(
         }
     }
 
+    private async Task RequireWriteAsync(Models.Media item, CallerContext caller, CancellationToken cancellationToken)
+    {
+        if (!await CanWriteAsync(item, caller, cancellationToken))
+        {
+            throw DomainException.Forbidden("You do not have permission to modify this media item.");
+        }
+    }
+
+    private async Task RequireTrashManageAsync(Models.Media item, CallerContext caller, CancellationToken cancellationToken)
+    {
+        if (item.OwnerKind == OwnerKind.Studio && !await CanAccessAsync(item, caller, cancellationToken))
+        {
+            throw DomainException.Forbidden("You do not have access to this media item.");
+        }
+
+        if (!CanManageTrash(item, caller))
+        {
+            throw DomainException.Forbidden("You do not have permission to manage Studio trash.");
+        }
+    }
+
+    private async Task<bool> CanWriteAsync(Models.Media item, CallerContext caller, CancellationToken cancellationToken)
+    {
+        if (item.OwnerKind == OwnerKind.User)
+        {
+            if (caller.OwnsAsUser(item.OwnerId))
+            {
+                return true;
+            }
+
+            var share = await media.GetMediaUserAsync(item.Id, caller.UserId, cancellationToken);
+            return share is { IsHidden: false, Role: Permission.Owner or Permission.Editor };
+        }
+
+        if (caller.IsStudioOwner(item.OwnerId))
+        {
+            return true;
+        }
+
+        var access = await media.GetMediaUserAsync(item.Id, caller.UserId, cancellationToken);
+        if (access is { IsHidden: true } or { Role: Permission.Viewer })
+        {
+            return false;
+        }
+
+        if (access is { Role: Permission.Owner or Permission.Editor })
+        {
+            return true;
+        }
+
+        return caller.CanWriteStudioContent(item.OwnerId);
+    }
+
     private async Task<bool> CanAccessAsync(Models.Media item, CallerContext caller, CancellationToken cancellationToken)
     {
+        if (item.OwnerKind == OwnerKind.Studio)
+        {
+            if (caller.IsStudioOwner(item.OwnerId))
+            {
+                return true;
+            }
+
+            if (!caller.InStudio(item.OwnerId))
+            {
+                return false;
+            }
+
+            var studioOverride = await media.GetMediaUserAsync(item.Id, caller.UserId, cancellationToken);
+            return studioOverride?.IsHidden != true;
+        }
+
         if (CanRead(item, caller))
         {
             return true;
         }
 
-        return await media.GetMediaUserAsync(item.Id, caller.UserId, cancellationToken) is not null;
+        var directShare = await media.GetMediaUserAsync(item.Id, caller.UserId, cancellationToken);
+        if (directShare is { IsHidden: true })
+        {
+            return false;
+        }
+
+        return directShare is { IsHidden: false }
+            || await albums.UserHasVisibleAlbumAccessToMediaAsync(item.Id, caller.UserId, cancellationToken);
     }
 
     private static OwnerKind OwnerKindOf(WorkspaceScope scope) => scope.IsStudio ? OwnerKind.Studio : OwnerKind.User;
@@ -966,13 +1131,112 @@ internal sealed class MediaService(
     private static MediaUser CreateMediaUser(Models.Media item, Guid userId, Permission role) =>
         item switch
         {
-            Video => new VideoUser { MediaId = item.Id, UserId = userId, Role = role, IsFavorite = false },
-            Audio => new AudioUser { MediaId = item.Id, UserId = userId, Role = role, IsFavorite = false },
-            Photo => new PhotoUser { MediaId = item.Id, UserId = userId, Role = role, IsFavorite = false },
+            Video => new VideoUser { MediaId = item.Id, UserId = userId, Role = role, IsFavorite = false, IsHidden = false },
+            Audio => new AudioUser { MediaId = item.Id, UserId = userId, Role = role, IsFavorite = false, IsHidden = false },
+            Photo => new PhotoUser { MediaId = item.Id, UserId = userId, Role = role, IsFavorite = false, IsHidden = false },
             _ => throw new NotSupportedException()
         };
 
-    internal static MediaDto ToDto(Models.Media m, bool isFavorite = false)
+    private async Task<IReadOnlyList<Models.Media>> FilterVisibleAsync(
+        IReadOnlyList<Models.Media> items,
+        CallerContext caller,
+        CancellationToken cancellationToken)
+    {
+        var visible = new List<Models.Media>();
+        foreach (var item in items)
+        {
+            if (await CanAccessAsync(item, caller, cancellationToken))
+            {
+                visible.Add(item);
+            }
+        }
+
+        return visible;
+    }
+
+    private async Task<IReadOnlyList<MediaAccessMemberDto>> BuildAccessRowsAsync(
+        Models.Media item,
+        CallerContext caller,
+        CancellationToken cancellationToken)
+    {
+        var members = await auth.ListStudioMembersAsync(item.OwnerId, cancellationToken);
+        var rows = new List<MediaAccessMemberDto>();
+        foreach (var member in members)
+        {
+            var access = await media.GetMediaUserAsync(item.Id, member.UserId, cancellationToken);
+            rows.Add(new MediaAccessMemberDto(
+                member.UserId,
+                member.Email,
+                member.DisplayName,
+                member.Role,
+                access?.Role ?? DefaultPermissionForStudioRole(member.Role),
+                access?.Role,
+                access?.IsHidden ?? false,
+                CanManageTarget(caller, item.OwnerId, member.Role)));
+        }
+
+        return rows;
+    }
+
+    private static void RequireStudioAccessManage(Models.Media item, CallerContext caller)
+    {
+        if (item.OwnerKind != OwnerKind.Studio)
+        {
+            throw DomainException.BadRequest("Item access overrides are only available for Studio media.");
+        }
+
+        if (!caller.CanManageStudioAccess(item.OwnerId))
+        {
+            throw DomainException.Forbidden("You do not have permission to manage item access.");
+        }
+    }
+
+    private static void RequireCanManageTarget(CallerContext caller, Guid studioId, string targetRole)
+    {
+        if (!CanManageTarget(caller, studioId, targetRole))
+        {
+            throw DomainException.Forbidden("You cannot restrict a member with that Studio role.");
+        }
+    }
+
+    private static bool CanManageTarget(CallerContext caller, Guid studioId, string targetRole)
+    {
+        if (caller.IsStudioOwner(studioId))
+        {
+            return !string.Equals(targetRole, "Owner", StringComparison.Ordinal);
+        }
+
+        return caller.IsStudioAdmin(studioId)
+            && !string.Equals(targetRole, "Owner", StringComparison.Ordinal)
+            && !string.Equals(targetRole, "Admin", StringComparison.Ordinal);
+    }
+
+    private static Permission DefaultPermissionForStudioRole(string studioRole) =>
+        string.Equals(studioRole, "Viewer", StringComparison.Ordinal)
+            ? Permission.Viewer
+            : Permission.Editor;
+
+    private async Task<IReadOnlyDictionary<Guid, UserSummary>> GetUserOwnerSummariesAsync(
+        IEnumerable<Models.Media> mediaItems,
+        CancellationToken cancellationToken)
+    {
+        var owners = new Dictionary<Guid, UserSummary>();
+        foreach (var ownerId in mediaItems
+            .Where(item => item.OwnerKind == OwnerKind.User)
+            .Select(item => item.OwnerId)
+            .Distinct())
+        {
+            var summary = await auth.GetSummaryAsync(ownerId, cancellationToken);
+            if (summary is not null)
+            {
+                owners[ownerId] = summary;
+            }
+        }
+
+        return owners;
+    }
+
+    internal static MediaDto ToDto(Models.Media m, bool isFavorite = false, UserSummary? owner = null)
     {
         double? duration = m switch { Video v => v.DurationSeconds, Audio a => a.DurationSeconds, _ => null };
         int? width = m switch { Video v => v.Width, Photo p => p.Width, _ => null };
@@ -983,6 +1247,8 @@ internal sealed class MediaService(
             m.Id,
             m.OwnerId,
             m.OwnerKind,
+            owner?.Email,
+            owner?.DisplayName,
             m.Kind,
             m.Filename,
             m.StorageKey,

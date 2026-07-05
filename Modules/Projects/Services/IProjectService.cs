@@ -17,7 +17,7 @@ public interface IProjectService
 
     Task<PagedResult<ProjectDto>> ListSharedWithMeAsync(Guid userId, int page, int pageSize, CancellationToken cancellationToken = default);
 
-    Task<PagedResult<ProjectTrashItemDto>> ListTrashAsync(WorkspaceScope scope, int page, int pageSize, CancellationToken cancellationToken = default);
+    Task<PagedResult<ProjectTrashItemDto>> ListTrashAsync(WorkspaceScope scope, CallerContext caller, int page, int pageSize, CancellationToken cancellationToken = default);
 
     Task<ProjectDto> GetAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default);
 
@@ -30,6 +30,10 @@ public interface IProjectService
     Task ShareAsync(Guid id, CallerContext caller, ShareProjectRequest request, CancellationToken cancellationToken = default);
 
     Task UnshareAsync(Guid id, CallerContext caller, Guid userId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<ProjectAccessMemberDto>> ListAccessAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<ProjectAccessMemberDto>> UpdateAccessAsync(Guid id, CallerContext caller, UpdateProjectAccessRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>Moves a project to Trash (soft-delete).</summary>
     Task SoftDeleteAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default);

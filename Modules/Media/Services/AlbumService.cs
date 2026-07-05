@@ -3,13 +3,17 @@ using Kuvox.Api.Modules.Shared.Dtos;
 using Kuvox.Api.Modules.Media.Enums;
 using Kuvox.Api.Modules.Media.Models;
 using Kuvox.Api.Modules.Media.Repositories;
+using Kuvox.Api.Modules.Auth.Contracts;
+using Kuvox.Api.Modules.Notifications;
 using Kuvox.Api.Modules.Shared.Infrastructure;
 
 namespace Kuvox.Api.Modules.Media.Services;
 
 internal sealed class AlbumService(
     IAlbumRepository albumRepository,
-    IMediaRepository mediaRepository) : IAlbumService
+    IMediaRepository mediaRepository,
+    IAuthApi auth,
+    INotificationsApi notifications) : IAlbumService
 {
     public async Task<AlbumDto> CreateAlbumAsync(
         WorkspaceScope scope,
@@ -47,7 +51,8 @@ internal sealed class AlbumService(
                 AlbumId = album.Id,
                 UserId = caller.UserId,
                 Role = Permission.Owner,
-                IsFavorite = false
+                IsFavorite = false,
+                IsHidden = false
             };
             albumRepository.AddAlbumUser(albumUser);
         }
@@ -162,10 +167,31 @@ internal sealed class AlbumService(
                 .ToList();
         }
 
+        if (scope.IsStudio && !caller.IsStudioOwner(scope.OwnerId))
+        {
+            albums = await FilterVisibleAsync(albums, caller, cancellationToken);
+        }
+
         var flags = scope.IsStudio
             ? new Dictionary<Guid, bool>()
             : await albumRepository.GetFavoriteFlagsAsync(albums.Select(album => album.Id), caller.UserId, cancellationToken);
-        return albums.Select(album => ToDto(album, flags.GetValueOrDefault(album.Id))).ToList();
+        var mediaCounts = await albumRepository.GetMediaCountsAsync(albums.Select(album => album.Id), cancellationToken);
+        return albums.Select(album => ToDto(album, flags.GetValueOrDefault(album.Id), mediaCounts.GetValueOrDefault(album.Id))).ToList();
+    }
+
+    public async Task<IReadOnlyList<AlbumDto>> ListSharedWithMeAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var items = await albumRepository.ListSharedWithUserAsync(userId, cancellationToken);
+        var flags = await albumRepository.GetFavoriteFlagsAsync(items.Select(item => item.Album.Id), userId, cancellationToken);
+        var mediaCounts = await albumRepository.GetMediaCountsAsync(items.Select(item => item.Album.Id), cancellationToken);
+        var owners = await GetUserOwnerSummariesAsync(items.Select(item => item.Album), cancellationToken);
+        return items.Select(item => ToDto(
+            item.Album,
+            flags.GetValueOrDefault(item.Album.Id),
+            mediaCounts.GetValueOrDefault(item.Album.Id),
+            owners.GetValueOrDefault(item.Album.OwnerId))).ToList();
     }
 
     public async Task<PagedResult<MediaDto>> ListAlbumMediaAsync(WorkspaceScope? scope, Guid albumId, CallerContext caller, bool includeSystem = false, CancellationToken cancellationToken = default)
@@ -183,7 +209,37 @@ internal sealed class AlbumService(
         await RequireReadAsync(album, caller, cancellationToken);
 
         var media = await albumRepository.ListAlbumMediaAsync(albumId, cancellationToken);
-        var dtos = media.Select(item => MediaService.ToDto(item)).ToList();
+        if (album.OwnerKind == OwnerKind.Studio && !caller.IsStudioOwner(album.OwnerId))
+        {
+            var visible = new List<Models.Media>();
+            foreach (var item in media)
+            {
+                var access = await mediaRepository.GetMediaUserAsync(item.Id, caller.UserId, cancellationToken);
+                if (access?.IsHidden != true)
+                {
+                    visible.Add(item);
+                }
+            }
+
+            media = visible;
+        }
+        else if (album.OwnerKind == OwnerKind.User && !caller.OwnsAsUser(album.OwnerId))
+        {
+            var visible = new List<Models.Media>();
+            foreach (var item in media)
+            {
+                var access = await mediaRepository.GetMediaUserAsync(item.Id, caller.UserId, cancellationToken);
+                if (access?.IsHidden != true)
+                {
+                    visible.Add(item);
+                }
+            }
+
+            media = visible;
+        }
+
+        var owners = await GetUserOwnerSummariesAsync(media, cancellationToken);
+        var dtos = media.Select(item => MediaService.ToDto(item, owner: owners.GetValueOrDefault(item.OwnerId))).ToList();
         
         // Return as PagedResult to match existing patterns, even though we just fetched all for now.
         return new PagedResult<MediaDto>(dtos, 1, dtos.Count > 0 ? dtos.Count : 1, dtos.Count);
@@ -218,11 +274,205 @@ internal sealed class AlbumService(
             await albumRepository.SaveChangesAsync(cancellationToken);
         }
 
-        return ToDto(album, albumUser.IsFavorite);
+        var mediaCount = await GetMediaCountAsync(album.Id, cancellationToken);
+        return ToDto(album, albumUser.IsFavorite, mediaCount);
     }
 
-    private static AlbumDto ToDto(Album album, bool isFavorite) =>
-        new(album.Id, album.OwnerId, album.OwnerKind, album.Name, album.Description, album.Kind, album.MaterialSymbol, album.IsDeleteAble, isFavorite);
+    public async Task ShareAsync(
+        Guid albumId,
+        CallerContext caller,
+        ShareAlbumRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.Role == Permission.Owner)
+        {
+            throw DomainException.BadRequest("Choose Viewer or Editor access.");
+        }
+
+        var album = await albumRepository.GetByIdAsync(albumId, cancellationToken)
+            ?? throw DomainException.NotFound("Album not found");
+
+        if (album.OwnerKind != OwnerKind.User)
+        {
+            throw DomainException.BadRequest("Use Studio item access for Studio albums.");
+        }
+
+        await RequireWriteAsync(album, caller, cancellationToken);
+
+        var invitee = await auth.GetSummaryByEmailAsync(request.Email.Trim().ToLowerInvariant(), cancellationToken)
+            ?? throw DomainException.NotFound("No user with that email.");
+
+        if (invitee.Id == album.OwnerId)
+        {
+            throw DomainException.Conflict("The owner already has access.");
+        }
+
+        var existing = await albumRepository.GetAlbumUserAsync(album.Id, invitee.Id, cancellationToken);
+        if (existing is null)
+        {
+            albumRepository.AddAlbumUser(new AlbumUser
+            {
+                AlbumId = album.Id,
+                UserId = invitee.Id,
+                Role = request.Role,
+                IsFavorite = false,
+                IsHidden = false
+            });
+        }
+        else
+        {
+            existing.Role = request.Role;
+            existing.IsHidden = false;
+            existing.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
+        await albumRepository.SaveChangesAsync(cancellationToken);
+        await notifications.CreateAsync(
+            invitee.Id,
+            null,
+            "MediaAccessChanged",
+            $"An album was shared with you: {album.Name}.",
+            "/dashboard/shared-assets",
+            cancellationToken);
+    }
+
+    public async Task UnshareAsync(
+        Guid albumId,
+        CallerContext caller,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var album = await albumRepository.GetByIdAsync(albumId, cancellationToken)
+            ?? throw DomainException.NotFound("Album not found");
+
+        if (album.OwnerKind != OwnerKind.User)
+        {
+            throw DomainException.BadRequest("Use Studio item access for Studio albums.");
+        }
+
+        await RequireWriteAsync(album, caller, cancellationToken);
+
+        var share = await albumRepository.GetAlbumUserAsync(album.Id, userId, cancellationToken);
+        if (share is not null)
+        {
+            albumRepository.RemoveAlbumUser(share);
+            await albumRepository.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    public async Task<IReadOnlyList<AlbumAccessMemberDto>> ListAccessAsync(
+        Guid albumId,
+        CallerContext caller,
+        CancellationToken cancellationToken = default)
+    {
+        var album = await albumRepository.GetByIdAsync(albumId, cancellationToken)
+            ?? throw DomainException.NotFound("Album not found");
+        RequireStudioAccessManage(album, caller);
+        return await BuildAccessRowsAsync(album, caller, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<AlbumAccessMemberDto>> UpdateAccessAsync(
+        Guid albumId,
+        CallerContext caller,
+        UpdateAlbumAccessRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var album = await albumRepository.GetByIdAsync(albumId, cancellationToken)
+            ?? throw DomainException.NotFound("Album not found");
+        RequireStudioAccessManage(album, caller);
+        var target = await auth.GetStudioMemberAsync(album.OwnerId, request.UserId, cancellationToken)
+            ?? throw DomainException.NotFound("Studio member not found.");
+
+        RequireCanManageTarget(caller, album.OwnerId, target.Role);
+        var role = request.Role ?? DefaultPermissionForStudioRole(target.Role);
+        if (role == Permission.Owner)
+        {
+            throw DomainException.BadRequest("Choose Viewer or Editor access.");
+        }
+
+        var access = await albumRepository.GetAlbumUserAsync(album.Id, request.UserId, cancellationToken);
+        if (access is null)
+        {
+            albumRepository.AddAlbumUser(new AlbumUser
+            {
+                AlbumId = album.Id,
+                UserId = request.UserId,
+                Role = role,
+                IsFavorite = false,
+                IsHidden = request.IsHidden
+            });
+        }
+        else
+        {
+            access.Role = role;
+            access.IsHidden = request.IsHidden;
+            access.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
+        await albumRepository.SaveChangesAsync(cancellationToken);
+        return await BuildAccessRowsAsync(album, caller, cancellationToken);
+    }
+
+    private async Task<int> GetMediaCountAsync(Guid albumId, CancellationToken cancellationToken)
+    {
+        var counts = await albumRepository.GetMediaCountsAsync([albumId], cancellationToken);
+        return counts.GetValueOrDefault(albumId);
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, UserSummary>> GetUserOwnerSummariesAsync(
+        IEnumerable<Album> albums,
+        CancellationToken cancellationToken)
+    {
+        var owners = new Dictionary<Guid, UserSummary>();
+        foreach (var ownerId in albums
+            .Where(item => item.OwnerKind == OwnerKind.User)
+            .Select(item => item.OwnerId)
+            .Distinct())
+        {
+            var summary = await auth.GetSummaryAsync(ownerId, cancellationToken);
+            if (summary is not null)
+            {
+                owners[ownerId] = summary;
+            }
+        }
+
+        return owners;
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, UserSummary>> GetUserOwnerSummariesAsync(
+        IEnumerable<Models.Media> mediaItems,
+        CancellationToken cancellationToken)
+    {
+        var owners = new Dictionary<Guid, UserSummary>();
+        foreach (var ownerId in mediaItems
+            .Where(item => item.OwnerKind == OwnerKind.User)
+            .Select(item => item.OwnerId)
+            .Distinct())
+        {
+            var summary = await auth.GetSummaryAsync(ownerId, cancellationToken);
+            if (summary is not null)
+            {
+                owners[ownerId] = summary;
+            }
+        }
+
+        return owners;
+    }
+
+    private static AlbumDto ToDto(Album album, bool isFavorite, int mediaCount = 0, UserSummary? owner = null) =>
+        new(
+            album.Id,
+            album.OwnerId,
+            album.OwnerKind,
+            owner?.Email,
+            owner?.DisplayName,
+            album.Name,
+            album.Description,
+            album.Kind,
+            album.MaterialSymbol,
+            album.IsDeleteAble,
+            mediaCount,
+            isFavorite);
 
     private async Task AddMediaToAlbumCoreAsync(
         Album album,
@@ -268,7 +518,18 @@ internal sealed class AlbumService(
     {
         if (album.OwnerKind == OwnerKind.Studio)
         {
+            if (caller.IsStudioOwner(album.OwnerId))
+            {
+                return;
+            }
+
             if (!caller.InStudio(album.OwnerId))
+            {
+                throw DomainException.Forbidden("You do not have access to this Studio album.");
+            }
+
+            var access = await albumRepository.GetAlbumUserAsync(album.Id, caller.UserId, cancellationToken);
+            if (access?.IsHidden == true)
             {
                 throw DomainException.Forbidden("You do not have access to this Studio album.");
             }
@@ -276,14 +537,34 @@ internal sealed class AlbumService(
             return;
         }
 
-        _ = await albumRepository.GetAlbumUserAsync(album.Id, caller.UserId, cancellationToken)
+        var albumUser = await albumRepository.GetAlbumUserAsync(album.Id, caller.UserId, cancellationToken)
             ?? throw DomainException.Forbidden("You do not have access to this album");
+        if (albumUser.IsHidden)
+        {
+            throw DomainException.Forbidden("You do not have access to this album");
+        }
     }
 
     private async Task RequireWriteAsync(Album album, CallerContext caller, CancellationToken cancellationToken)
     {
         if (album.OwnerKind == OwnerKind.Studio)
         {
+            if (caller.IsStudioOwner(album.OwnerId))
+            {
+                return;
+            }
+
+            var access = await albumRepository.GetAlbumUserAsync(album.Id, caller.UserId, cancellationToken);
+            if (access is { IsHidden: true } or { Role: Permission.Viewer })
+            {
+                throw DomainException.Forbidden("You do not have permission to modify this Studio album.");
+            }
+
+            if (access is { Role: Permission.Owner or Permission.Editor })
+            {
+                return;
+            }
+
             if (!caller.CanWriteStudioContent(album.OwnerId))
             {
                 throw DomainException.Forbidden("You do not have permission to modify this Studio album.");
@@ -295,7 +576,7 @@ internal sealed class AlbumService(
         var albumUser = await albumRepository.GetAlbumUserAsync(album.Id, caller.UserId, cancellationToken)
             ?? throw DomainException.Forbidden("You do not have access to this album");
 
-        if (albumUser.Role is not Permission.Owner and not Permission.Editor)
+        if (albumUser.IsHidden || albumUser.Role is not Permission.Owner and not Permission.Editor)
         {
             throw DomainException.Forbidden("You do not have permission to modify this album");
         }
@@ -327,7 +608,7 @@ internal sealed class AlbumService(
             return;
         }
 
-        if (await mediaRepository.GetMediaUserAsync(media.Id, caller.UserId, cancellationToken) is null)
+        if (await mediaRepository.GetMediaUserAsync(media.Id, caller.UserId, cancellationToken) is not { IsHidden: false })
         {
             throw DomainException.Forbidden("You do not have access to this media item.");
         }
@@ -375,7 +656,8 @@ internal sealed class AlbumService(
                 AlbumId = album.Id,
                 UserId = caller.UserId,
                 Role = Permission.Owner,
-                IsFavorite = false
+                IsFavorite = false,
+                IsHidden = false
             });
         }
 
@@ -397,6 +679,86 @@ internal sealed class AlbumService(
             throw DomainException.NotFound("Album not found");
         }
     }
+
+    private async Task<IReadOnlyList<Album>> FilterVisibleAsync(
+        IReadOnlyList<Album> albums,
+        CallerContext caller,
+        CancellationToken cancellationToken)
+    {
+        var visible = new List<Album>();
+        foreach (var album in albums)
+        {
+            var access = await albumRepository.GetAlbumUserAsync(album.Id, caller.UserId, cancellationToken);
+            if (access?.IsHidden != true)
+            {
+                visible.Add(album);
+            }
+        }
+
+        return visible;
+    }
+
+    private async Task<IReadOnlyList<AlbumAccessMemberDto>> BuildAccessRowsAsync(
+        Album album,
+        CallerContext caller,
+        CancellationToken cancellationToken)
+    {
+        var members = await auth.ListStudioMembersAsync(album.OwnerId, cancellationToken);
+        var rows = new List<AlbumAccessMemberDto>();
+        foreach (var member in members)
+        {
+            var access = await albumRepository.GetAlbumUserAsync(album.Id, member.UserId, cancellationToken);
+            rows.Add(new AlbumAccessMemberDto(
+                member.UserId,
+                member.Email,
+                member.DisplayName,
+                member.Role,
+                access?.Role ?? DefaultPermissionForStudioRole(member.Role),
+                access?.Role,
+                access?.IsHidden ?? false,
+                CanManageTarget(caller, album.OwnerId, member.Role)));
+        }
+
+        return rows;
+    }
+
+    private static void RequireStudioAccessManage(Album album, CallerContext caller)
+    {
+        if (album.OwnerKind != OwnerKind.Studio)
+        {
+            throw DomainException.BadRequest("Item access overrides are only available for Studio albums.");
+        }
+
+        if (!caller.CanManageStudioAccess(album.OwnerId))
+        {
+            throw DomainException.Forbidden("You do not have permission to manage item access.");
+        }
+    }
+
+    private static void RequireCanManageTarget(CallerContext caller, Guid studioId, string targetRole)
+    {
+        if (!CanManageTarget(caller, studioId, targetRole))
+        {
+            throw DomainException.Forbidden("You cannot restrict a member with that Studio role.");
+        }
+    }
+
+    private static bool CanManageTarget(CallerContext caller, Guid studioId, string targetRole)
+    {
+        if (caller.IsStudioOwner(studioId))
+        {
+            return !string.Equals(targetRole, "Owner", StringComparison.Ordinal);
+        }
+
+        return caller.IsStudioAdmin(studioId)
+            && !string.Equals(targetRole, "Owner", StringComparison.Ordinal)
+            && !string.Equals(targetRole, "Admin", StringComparison.Ordinal);
+    }
+
+    private static Permission DefaultPermissionForStudioRole(string studioRole) =>
+        string.Equals(studioRole, "Viewer", StringComparison.Ordinal)
+            ? Permission.Viewer
+            : Permission.Editor;
 
     private static AudioCategory? TryGetReservedAudioCategory(string value)
     {

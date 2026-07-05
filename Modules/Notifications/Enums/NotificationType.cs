@@ -18,6 +18,8 @@ public enum NotificationType
     MediaAccessChanged = 13,
     QuotaWarning = 14,
     QuotaExceeded = 15,
+    TaskAssigned = 16,
+    ReviewStatusChanged = 17,
 
     WELCOME_EMAIL = Welcome,
     MEDIA_UPLOADED = MediaUploaded,

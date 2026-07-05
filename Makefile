@@ -15,13 +15,16 @@ NOTIFICATIONS_DIR := Modules/Notifications/Repositories/Migrations
 PROJECTS_CTX    := Kuvox.Api.Modules.Projects.Repositories.ProjectsDbContext
 PROJECTS_DIR    := Modules/Projects/Repositories/Migrations
 
+TASKS_CTX       := Kuvox.Api.Modules.Tasks.Repositories.TasksDbContext
+TASKS_DIR       := Modules/Tasks/Repositories/Migrations
+
 TIMELINES_CTX   := Kuvox.Api.Modules.Timelines.Repositories.TimelinesDbContext
 TIMELINES_DIR   := Modules/Timelines/Repositories/Migrations
 
 # ── General targets ───────────────────────────────────────────────────
 .PHONY: help restore run watch build test format up down clean
-.PHONY: migrate-add-auth migrate-add-media migrate-add-notifications migrate-add-projects migrate-add-timelines
-.PHONY: migrate-auth migrate-media migrate-notifications migrate-projects migrate-timelines
+.PHONY: migrate-add-auth migrate-add-media migrate-add-notifications migrate-add-projects migrate-add-tasks migrate-add-timelines
+.PHONY: migrate-auth migrate-media migrate-notifications migrate-projects migrate-tasks migrate-timelines
 .PHONY: migrate-all db-reset
 
 help: ## Show this help.
@@ -67,32 +70,46 @@ migrate-add-notifications: ## Add Notifications migration. Usage: make migrate-a
 migrate-add-projects: ## Add Projects migration.  Usage: make migrate-add-projects NAME=AddQux
 	dotnet ef migrations add $(NAME) --context $(PROJECTS_CTX) --output-dir $(PROJECTS_DIR)
 
+migrate-add-tasks: ## Add Tasks migration.     Usage: make migrate-add-tasks NAME=AddTasksQux
+	dotnet ef migrations add $(NAME) --context $(TASKS_CTX) --output-dir $(TASKS_DIR)
+
 migrate-add-timelines: ## Add Timelines migration. Usage: make migrate-add-timelines NAME=AddQuux
 	dotnet ef migrations add $(NAME) --context $(TIMELINES_CTX) --output-dir $(TIMELINES_DIR)
 
 # ── Apply pending migrations (per module) ─────────────────────────────
 migrate-auth: ## Apply pending Auth migrations.
-	dotnet ef database update --context $(AUTH_CTX)
+	dotnet build -p:UseAppHost=false
+	dotnet ef database update --context $(AUTH_CTX) --no-build
 
 migrate-media: ## Apply pending Media migrations.
-	dotnet ef database update --context $(MEDIA_CTX)
+	dotnet build -p:UseAppHost=false
+	dotnet ef database update --context $(MEDIA_CTX) --no-build
 
 migrate-notifications: ## Apply pending Notifications migrations.
-	dotnet ef database update --context $(NOTIFICATIONS_CTX)
+	dotnet build -p:UseAppHost=false
+	dotnet ef database update --context $(NOTIFICATIONS_CTX) --no-build
 
 migrate-projects: ## Apply pending Projects migrations.
-	dotnet ef database update --context $(PROJECTS_CTX)
+	dotnet build -p:UseAppHost=false
+	dotnet ef database update --context $(PROJECTS_CTX) --no-build
+
+migrate-tasks: ## Apply pending Tasks migrations.
+	dotnet build -p:UseAppHost=false
+	dotnet ef database update --context $(TASKS_CTX) --no-build
 
 migrate-timelines: ## Apply pending Timelines migrations.
-	dotnet ef database update --context $(TIMELINES_CTX)
+	dotnet build -p:UseAppHost=false
+	dotnet ef database update --context $(TIMELINES_CTX) --no-build
 
 # ── Bulk operations ──────────────────────────────────────────────────
 migrate-all: ## Apply ALL pending migrations (every module).
-	dotnet ef database update --context $(AUTH_CTX)
-	dotnet ef database update --context $(MEDIA_CTX)
-	dotnet ef database update --context $(NOTIFICATIONS_CTX)
-	dotnet ef database update --context $(PROJECTS_CTX)
-	dotnet ef database update --context $(TIMELINES_CTX)
+	dotnet build -p:UseAppHost=false
+	dotnet ef database update --context $(AUTH_CTX) --no-build
+	dotnet ef database update --context $(MEDIA_CTX) --no-build
+	dotnet ef database update --context $(NOTIFICATIONS_CTX) --no-build
+	dotnet ef database update --context $(PROJECTS_CTX) --no-build
+	dotnet ef database update --context $(TASKS_CTX) --no-build
+	dotnet ef database update --context $(TIMELINES_CTX) --no-build
 
 db-reset: ## Drop & recreate DB, then apply all migrations.
 	dotnet ef database drop --context $(AUTH_CTX) --force
@@ -100,5 +117,6 @@ db-reset: ## Drop & recreate DB, then apply all migrations.
 	dotnet ef database update --context $(MEDIA_CTX)
 	dotnet ef database update --context $(NOTIFICATIONS_CTX)
 	dotnet ef database update --context $(PROJECTS_CTX)
+	dotnet ef database update --context $(TASKS_CTX)
 	dotnet ef database update --context $(TIMELINES_CTX)
 	@echo "Database reset complete — all migrations applied."

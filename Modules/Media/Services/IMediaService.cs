@@ -11,13 +11,15 @@ public interface IMediaService
 
     Task<PagedResult<MediaDto>> ListSharedWithMeAsync(Guid userId, int page, int pageSize, CancellationToken cancellationToken = default);
 
-    Task<PagedResult<MediaTrashItemDto>> ListTrashAsync(WorkspaceScope scope, int page, int pageSize, CancellationToken cancellationToken = default);
+    Task<PagedResult<MediaTrashItemDto>> ListTrashAsync(WorkspaceScope scope, CallerContext caller, int page, int pageSize, CancellationToken cancellationToken = default);
 
     Task<MediaDto> GetAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default);
 
     Task<MediaObjectDownload> GetObjectAsync(Guid id, string variant, CallerContext caller, CancellationToken cancellationToken = default);
 
     Task<MediaDto> UploadRawAsync(WorkspaceScope scope, CallerContext caller, UploadMediaRequest request, CancellationToken cancellationToken = default);
+
+    Task<MediaStorageUsageDto> GetStorageUsageAsync(WorkspaceScope scope, CancellationToken cancellationToken = default);
 
     Task<MediaStorageUsageDto> GetPersonalStorageUsageAsync(CallerContext caller, CancellationToken cancellationToken = default);
 
@@ -34,6 +36,10 @@ public interface IMediaService
     Task ShareAsync(Guid id, CallerContext caller, ShareMediaRequest request, CancellationToken cancellationToken = default);
 
     Task UnshareAsync(Guid id, CallerContext caller, Guid userId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<MediaAccessMemberDto>> ListAccessAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<MediaAccessMemberDto>> UpdateAccessAsync(Guid id, CallerContext caller, UpdateMediaAccessRequest request, CancellationToken cancellationToken = default);
 
     Task SoftDeleteAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default);
 

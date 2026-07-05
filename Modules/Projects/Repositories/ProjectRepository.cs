@@ -35,7 +35,7 @@ internal sealed class ProjectRepository(ProjectsDbContext db) : IProjectReposito
         var query =
             from pu in db.ProjectUsers
             join p in db.Projects on pu.ProjectId equals p.Id
-            where pu.UserId == userId && p.DeletedAt == null && p.OwnerId != userId
+            where pu.UserId == userId && !pu.IsHidden && p.DeletedAt == null && p.OwnerKind == OwnerKind.User && p.OwnerId != userId
             orderby p.UpdatedAt descending
             select new { Project = p, pu.Role };
 
@@ -84,6 +84,50 @@ internal sealed class ProjectRepository(ProjectsDbContext db) : IProjectReposito
         return await db.ProjectUsers
             .Where(pu => pu.UserId == userId && ids.Contains(pu.ProjectId))
             .ToDictionaryAsync(pu => pu.ProjectId, pu => pu.IsStarred, cancellationToken);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, int>> GetMediaCountsAsync(
+        IEnumerable<Guid> projectIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = projectIds.Distinct().ToArray();
+        if (ids.Length == 0)
+        {
+            return new Dictionary<Guid, int>();
+        }
+
+        var counts = new Dictionary<Guid, int>();
+        await AddProjectMediaCountsAsync(
+            counts,
+            db.ProjectImages.Where(pm => ids.Contains(pm.ProjectId)),
+            cancellationToken);
+        await AddProjectMediaCountsAsync(
+            counts,
+            db.ProjectAudios.Where(pm => ids.Contains(pm.ProjectId)),
+            cancellationToken);
+        await AddProjectMediaCountsAsync(
+            counts,
+            db.ProjectVideos.Where(pm => ids.Contains(pm.ProjectId)),
+            cancellationToken);
+
+        return counts;
+    }
+
+    private static async Task AddProjectMediaCountsAsync<TProjectMedia>(
+        Dictionary<Guid, int> counts,
+        IQueryable<TProjectMedia> query,
+        CancellationToken cancellationToken)
+        where TProjectMedia : ProjectMedia
+    {
+        var rows = await query
+            .GroupBy(pm => pm.ProjectId)
+            .Select(group => new { ProjectId = group.Key, Count = group.Count() })
+            .ToListAsync(cancellationToken);
+
+        foreach (var row in rows)
+        {
+            counts[row.ProjectId] = counts.GetValueOrDefault(row.ProjectId) + row.Count;
+        }
     }
 
     public async Task<int> DeleteProjectMediaByMediaIdAsync(Guid mediaId, CancellationToken cancellationToken = default)

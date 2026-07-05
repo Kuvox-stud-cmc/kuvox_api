@@ -17,4 +17,6 @@ public abstract class MediaUser : JunctionBaseEntity
     public required bool IsFavorite { get; set; } = false;
 
     public required Permission Role { get; set; }
+
+    public required bool IsHidden { get; set; } = false;
 }

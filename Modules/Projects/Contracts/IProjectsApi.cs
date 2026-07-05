@@ -6,4 +6,6 @@ public interface IProjectsApi
     Task<bool> ProjectExistsAsync(Guid projectId, CancellationToken cancellationToken = default);
 
     Task<ProjectSummary?> GetSummaryAsync(Guid projectId, CancellationToken cancellationToken = default);
+
+    Task<int> CountByWorkspaceAsync(Guid ownerId, ProjectOwnerKind ownerKind, CancellationToken cancellationToken = default);
 }

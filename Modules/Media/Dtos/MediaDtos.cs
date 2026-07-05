@@ -6,6 +6,8 @@ public sealed record MediaDto(
     Guid Id,
     Guid OwnerId,
     OwnerKind OwnerKind,
+    string? OwnerEmail,
+    string? OwnerDisplayName,
     MediaKind Kind,
     string Filename,
     string StorageKey,
@@ -42,6 +44,18 @@ public sealed record UploadMediaRequest(
 
 /// <summary>Grants another user (looked up by email) access to a media item.</summary>
 public sealed record ShareMediaRequest(string Email, Permission Role);
+
+public sealed record UpdateMediaAccessRequest(Guid UserId, Permission? Role, bool IsHidden);
+
+public sealed record MediaAccessMemberDto(
+    Guid UserId,
+    string Email,
+    string DisplayName,
+    string StudioRole,
+    Permission EffectiveRole,
+    Permission? OverrideRole,
+    bool IsHidden,
+    bool CanManage);
 
 public sealed record ToggleMediaFavoriteRequest(bool IsFavorite);
 

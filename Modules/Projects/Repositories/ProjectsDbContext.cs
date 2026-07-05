@@ -63,6 +63,7 @@ public sealed class ProjectsDbContext(DbContextOptions<ProjectsDbContext> option
             entity.Property(pu => pu.Role).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(pu => pu.IsStarred).HasDefaultValue(false).IsRequired();
             entity.Property(pu => pu.IsTemplate).HasDefaultValue(false).IsRequired();
+            entity.Property(pu => pu.IsHidden).HasDefaultValue(false).IsRequired();
             entity.HasIndex(pu => pu.UserId);
 
             entity.HasOne<Project>()

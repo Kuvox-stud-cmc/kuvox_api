@@ -13,4 +13,13 @@ internal sealed class MediaApi(IMediaRepository media) : IMediaApi
             ? null
             : new MediaSummary(item.Id, item.OwnerId, item.OwnerKind, item.Kind, item.Filename, item.Status.ToString());
     }
+
+    public async Task<MediaWorkspaceUsageSummary> GetWorkspaceUsageAsync(
+        Guid ownerId,
+        Enums.OwnerKind ownerKind,
+        CancellationToken cancellationToken = default)
+    {
+        var usage = await media.GetStorageUsageAsync(ownerKind, ownerId, cancellationToken);
+        return new MediaWorkspaceUsageSummary(usage.MediaCount, usage.StorageBytesUsed);
+    }
 }
