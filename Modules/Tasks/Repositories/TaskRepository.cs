@@ -31,7 +31,8 @@ internal sealed class TaskRepository(TasksDbContext db) : ITaskRepository
         return await ApplyFilters(
                 BaseIssueQuery()
                     .Where(issue => studioIds.Contains(issue.StudioId))
-                    .Where(issue => issue.Assignees.Any(assignee => assignee.UserId == userId)),
+                    .Where(issue => issue.Assignees.Any(assignee => assignee.UserId == userId)
+                        || issue.Reviewers.Any(reviewer => reviewer.UserId == userId)),
                 filters)
             .OrderBy(issue => issue.Status == TaskIssueStatus.Closed)
             .ThenBy(issue => issue.DueDate == null)
@@ -68,6 +69,8 @@ internal sealed class TaskRepository(TasksDbContext db) : ITaskRepository
     public void RemoveIssue(TaskIssue issue) => db.Issues.Remove(issue);
 
     public void RemoveAssignee(TaskAssignee assignee) => db.Assignees.Remove(assignee);
+
+    public void RemoveReviewer(TaskReviewer reviewer) => db.Reviewers.Remove(reviewer);
 
     public void RemoveIssueLabel(TaskIssueLabel issueLabel) => db.IssueLabels.Remove(issueLabel);
 
@@ -108,6 +111,17 @@ internal sealed class TaskRepository(TasksDbContext db) : ITaskRepository
     public Task<TaskLabel?> GetLabelAsync(Guid id, CancellationToken cancellationToken = default) =>
         db.Labels.FirstOrDefaultAsync(label => label.Id == id, cancellationToken);
 
+    public Task<bool> LabelNameExistsAsync(
+        Guid studioId,
+        string name,
+        Guid? excludeId = null,
+        CancellationToken cancellationToken = default) =>
+        db.Labels.AnyAsync(
+            label => label.StudioId == studioId
+                && label.Name == name
+                && (excludeId == null || label.Id != excludeId),
+            cancellationToken);
+
     public async Task<IReadOnlyList<TaskLabel>> GetLabelsAsync(IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken = default)
     {
         if (ids.Count == 0)
@@ -146,6 +160,7 @@ internal sealed class TaskRepository(TasksDbContext db) : ITaskRepository
             .Include(issue => issue.Comments)
             .Include(issue => issue.Activities)
             .Include(issue => issue.Assignees)
+            .Include(issue => issue.Reviewers)
             .Include(issue => issue.Labels)
                 .ThenInclude(issueLabel => issueLabel.TaskLabel);
 
@@ -163,7 +178,8 @@ internal sealed class TaskRepository(TasksDbContext db) : ITaskRepository
 
         if (filters.AssigneeId is { } assigneeId)
         {
-            query = query.Where(issue => issue.Assignees.Any(assignee => assignee.UserId == assigneeId));
+            query = query.Where(issue => issue.Assignees.Any(assignee => assignee.UserId == assigneeId)
+                || issue.Reviewers.Any(reviewer => reviewer.UserId == assigneeId));
         }
 
         if (filters.MilestoneId is { } milestoneId)

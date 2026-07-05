@@ -20,6 +20,7 @@ public enum NotificationType
     QuotaExceeded = 15,
     TaskAssigned = 16,
     ReviewStatusChanged = 17,
+    TaskCommentMentioned = 18,
 
     WELCOME_EMAIL = Welcome,
     MEDIA_UPLOADED = MediaUploaded,

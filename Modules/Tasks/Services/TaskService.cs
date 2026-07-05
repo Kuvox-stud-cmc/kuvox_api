@@ -5,6 +5,7 @@ using Kuvox.Api.Modules.Tasks.Contracts;
 using Kuvox.Api.Modules.Tasks.Models;
 using Kuvox.Api.Modules.Tasks.Repositories;
 using MediatR;
+using System.Text.RegularExpressions;
 
 namespace Kuvox.Api.Modules.Tasks.Services;
 
@@ -15,6 +16,10 @@ internal sealed class TaskService(
     IMediator mediator)
     : ITaskService
 {
+    private static readonly Regex MentionRegex = new(
+        @"(?<![A-Za-z0-9_])@([A-Za-z0-9._%+\-@]+)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     public async Task<IReadOnlyList<TaskIssueDto>> ListAsync(
         Guid studioId,
         CallerContext caller,
@@ -61,7 +66,7 @@ internal sealed class TaskService(
         await ValidateParentAsync(studioId, null, request.ParentTaskIssueId, cancellationToken);
         await ValidateMilestoneAsync(studioId, request.MilestoneId, cancellationToken);
         var labels = await ValidateLabelsAsync(studioId, request.LabelIds ?? [], cancellationToken);
-        var assignees = await ValidateAssigneesAsync(studioId, request.AssigneeIds ?? [], cancellationToken);
+        var people = await ValidateIssuePeopleAsync(studioId, request.Kind, request.AssigneeIds ?? [], request.ReviewerIds ?? [], cancellationToken);
         await ValidateProjectAsync(studioId, request.ProjectId, cancellationToken);
 
         var issue = new TaskIssue
@@ -78,9 +83,14 @@ internal sealed class TaskService(
             CreatedByUserId = caller.UserId,
         };
 
-        foreach (var assigneeId in assignees.Select(member => member.UserId))
+        foreach (var assigneeId in people.Assignees.Select(member => member.UserId))
         {
             issue.Assignees.Add(new TaskAssignee { TaskIssueId = issue.Id, UserId = assigneeId });
+        }
+
+        foreach (var reviewerId in people.Reviewers.Select(member => member.UserId))
+        {
+            issue.Reviewers.Add(new TaskReviewer { TaskIssueId = issue.Id, UserId = reviewerId });
         }
 
         foreach (var label in labels)
@@ -89,14 +99,14 @@ internal sealed class TaskService(
         }
 
         await tasks.AddIssueAsync(issue, cancellationToken);
-        await AddActivityAsync(issue.Id, issue.StudioId, caller.UserId, "created", "Created task.", cancellationToken);
+        await AddActivityAsync(issue.Id, issue.StudioId, caller.UserId, "created", issue.Kind == TaskIssueKind.Review ? "Created review request." : "Created task.", cancellationToken);
         if (issue.ParentTaskIssueId is { } parentId)
         {
             await AddActivityAsync(parentId, issue.StudioId, caller.UserId, "child_created", $"Created child task \"{issue.Title}\".", cancellationToken);
         }
 
         await tasks.SaveChangesAsync(cancellationToken);
-        await NotifyAssignedAsync(issue, assignees.Select(member => member.UserId), cancellationToken);
+        await NotifyAssignedAsync(issue, people.Assignees.Select(member => member.UserId), cancellationToken);
         return await ToIssueDtoAsync(issue, cancellationToken);
     }
 
@@ -112,12 +122,14 @@ internal sealed class TaskService(
         await ValidateParentAsync(issue.StudioId, issue.Id, request.ParentTaskIssueId, cancellationToken);
         await ValidateMilestoneAsync(issue.StudioId, request.MilestoneId, cancellationToken);
         var labels = await ValidateLabelsAsync(issue.StudioId, request.LabelIds ?? [], cancellationToken);
-        var assignees = await ValidateAssigneesAsync(issue.StudioId, request.AssigneeIds ?? [], cancellationToken);
+        var people = await ValidateIssuePeopleAsync(issue.StudioId, request.Kind, request.AssigneeIds ?? [], request.ReviewerIds ?? [], cancellationToken);
         await ValidateProjectAsync(issue.StudioId, request.ProjectId, cancellationToken);
 
         var existingAssigneeIds = issue.Assignees.Select(assignee => assignee.UserId).ToHashSet();
-        var nextAssigneeIds = assignees.Select(member => member.UserId).ToHashSet();
+        var nextAssigneeIds = people.Assignees.Select(member => member.UserId).ToHashSet();
         var addedAssigneeIds = nextAssigneeIds.Except(existingAssigneeIds).ToList();
+        var existingReviewerIds = issue.Reviewers.Select(reviewer => reviewer.UserId).ToHashSet();
+        var nextReviewerIds = people.Reviewers.Select(member => member.UserId).ToHashSet();
         var existingLabelIdsForActivity = issue.Labels.Select(label => label.TaskLabelId).ToHashSet();
         var previousMilestoneId = issue.MilestoneId;
         var previousProjectId = issue.ProjectId;
@@ -131,6 +143,16 @@ internal sealed class TaskService(
         foreach (var added in addedAssigneeIds)
         {
             issue.Assignees.Add(new TaskAssignee { TaskIssueId = issue.Id, UserId = added });
+        }
+
+        foreach (var removed in issue.Reviewers.Where(reviewer => !nextReviewerIds.Contains(reviewer.UserId)).ToList())
+        {
+            tasks.RemoveReviewer(removed);
+        }
+
+        foreach (var added in nextReviewerIds.Except(existingReviewerIds))
+        {
+            issue.Reviewers.Add(new TaskReviewer { TaskIssueId = issue.Id, UserId = added });
         }
 
         var nextLabelIds = labels.Select(label => label.Id).ToHashSet();
@@ -158,6 +180,11 @@ internal sealed class TaskService(
         if (!existingAssigneeIds.SetEquals(nextAssigneeIds))
         {
             await AddActivityAsync(issue.Id, issue.StudioId, caller.UserId, "assignment_changed", "Updated assignees.", cancellationToken);
+        }
+
+        if (!existingReviewerIds.SetEquals(nextReviewerIds))
+        {
+            await AddActivityAsync(issue.Id, issue.StudioId, caller.UserId, "reviewers_changed", "Updated reviewers.", cancellationToken);
         }
 
         if (!existingLabelIdsForActivity.SetEquals(nextLabelIds))
@@ -339,10 +366,17 @@ internal sealed class TaskService(
     {
         RequireStudioWrite(studioId, caller);
         ValidateTitle(request.Name);
+        ValidateMaxLength(request.Name, 80, "Label name");
+        var name = request.Name.Trim();
+        if (await tasks.LabelNameExistsAsync(studioId, name, cancellationToken: cancellationToken))
+        {
+            throw DomainException.Conflict("A label with this name already exists in this Studio.");
+        }
+
         var label = new TaskLabel
         {
             StudioId = studioId,
-            Name = request.Name.Trim(),
+            Name = name,
             Color = NormalizeColor(request.Color),
         };
         await tasks.AddLabelAsync(label, cancellationToken);
@@ -391,6 +425,7 @@ internal sealed class TaskService(
         issue.UpdatedAt = DateTimeOffset.UtcNow;
         await AddActivityAsync(issue.Id, issue.StudioId, caller.UserId, "comment_created", "Added a comment.", cancellationToken);
         await tasks.SaveChangesAsync(cancellationToken);
+        await NotifyCommentMentionsAsync(issue, caller.UserId, comment.Body, previousBody: null, cancellationToken);
         return await ToCommentDtoAsync(comment, cancellationToken);
     }
 
@@ -409,9 +444,11 @@ internal sealed class TaskService(
         }
 
         ValidateCommentBody(request.Body);
+        var previousBody = comment.Body;
         comment.Body = request.Body.Trim();
         comment.EditedAt = DateTimeOffset.UtcNow;
         comment.UpdatedAt = DateTimeOffset.UtcNow;
+        var issue = comment.TaskIssue ?? await LoadIssueAsync(comment.TaskIssueId, cancellationToken);
         if (comment.TaskIssue is not null)
         {
             comment.TaskIssue.UpdatedAt = DateTimeOffset.UtcNow;
@@ -419,6 +456,7 @@ internal sealed class TaskService(
 
         await AddActivityAsync(comment.TaskIssueId, comment.StudioId, caller.UserId, "comment_edited", "Edited a comment.", cancellationToken);
         await tasks.SaveChangesAsync(cancellationToken);
+        await NotifyCommentMentionsAsync(issue, caller.UserId, comment.Body, previousBody, cancellationToken);
         return await ToCommentDtoAsync(comment, cancellationToken);
     }
 
@@ -454,7 +492,14 @@ internal sealed class TaskService(
             ?? throw DomainException.NotFound("Label not found.");
         RequireStudioWrite(label.StudioId, caller);
         ValidateTitle(request.Name);
-        label.Name = request.Name.Trim();
+        ValidateMaxLength(request.Name, 80, "Label name");
+        var name = request.Name.Trim();
+        if (await tasks.LabelNameExistsAsync(label.StudioId, name, label.Id, cancellationToken))
+        {
+            throw DomainException.Conflict("A label with this name already exists in this Studio.");
+        }
+
+        label.Name = name;
         label.Color = NormalizeColor(request.Color);
         label.UpdatedAt = DateTimeOffset.UtcNow;
         await tasks.SaveChangesAsync(cancellationToken);
@@ -574,6 +619,51 @@ internal sealed class TaskService(
         return selected;
     }
 
+    private async Task<IssuePeople> ValidateIssuePeopleAsync(
+        Guid studioId,
+        TaskIssueKind kind,
+        IReadOnlyCollection<Guid> assigneeIds,
+        IReadOnlyCollection<Guid> reviewerIds,
+        CancellationToken cancellationToken)
+    {
+        if (kind == TaskIssueKind.Review)
+        {
+            var reviewers = await ValidateReviewersAsync(studioId, reviewerIds, requireAny: true, cancellationToken);
+            return new IssuePeople([], reviewers);
+        }
+
+        var assignees = await ValidateAssigneesAsync(studioId, assigneeIds, cancellationToken);
+        var taskReviewers = await ValidateReviewersAsync(studioId, reviewerIds, requireAny: false, cancellationToken);
+        return new IssuePeople(assignees, taskReviewers);
+    }
+
+    private async Task<IReadOnlyList<StudioMemberSummary>> ValidateReviewersAsync(
+        Guid studioId,
+        IReadOnlyCollection<Guid> reviewerIds,
+        bool requireAny,
+        CancellationToken cancellationToken)
+    {
+        var ids = reviewerIds.Distinct().ToHashSet();
+        if (ids.Count == 0)
+        {
+            if (!requireAny)
+            {
+                return [];
+            }
+
+            throw DomainException.BadRequest("Reviews require at least one reviewer.");
+        }
+
+        var members = await auth.ListStudioMembersAsync(studioId, cancellationToken);
+        var selected = members.Where(member => ids.Contains(member.UserId)).ToList();
+        if (selected.Count != ids.Count)
+        {
+            throw DomainException.BadRequest("Reviewers must be members of this Studio.");
+        }
+
+        return selected;
+    }
+
     private async Task ValidateProjectAsync(Guid studioId, Guid? projectId, CancellationToken cancellationToken)
     {
         if (projectId is not { } id)
@@ -621,6 +711,7 @@ internal sealed class TaskService(
             dto.DueDate,
             dto.Milestone,
             dto.Assignees,
+            dto.Reviewers,
             dto.Labels,
             dto.CreatedByUserId,
             dto.CreatedAt,
@@ -666,6 +757,10 @@ internal sealed class TaskService(
                 .OrderBy(assignee => memberMap.GetValueOrDefault(assignee.UserId)?.DisplayName ?? "")
                 .Select(assignee => ToAssigneeDto(assignee.UserId, memberMap))
                 .ToList(),
+            issue.Reviewers
+                .OrderBy(reviewer => memberMap.GetValueOrDefault(reviewer.UserId)?.DisplayName ?? "")
+                .Select(reviewer => ToReviewerDto(reviewer.UserId, memberMap))
+                .ToList(),
             issue.Labels
                 .Where(label => label.TaskLabel is not null)
                 .OrderBy(label => label.TaskLabel!.Name)
@@ -696,6 +791,18 @@ internal sealed class TaskService(
         }
 
         return new TaskAssigneeDto(userId, "", "Former member");
+    }
+
+    private static TaskReviewerDto ToReviewerDto(
+        Guid userId,
+        IReadOnlyDictionary<Guid, StudioMemberSummary> memberMap)
+    {
+        if (memberMap.TryGetValue(userId, out var member))
+        {
+            return new TaskReviewerDto(member.UserId, member.Email, member.DisplayName);
+        }
+
+        return new TaskReviewerDto(userId, "", "Former member");
     }
 
     private static TaskCommentDto ToCommentDto(
@@ -773,6 +880,11 @@ internal sealed class TaskService(
         IEnumerable<Guid> assigneeIds,
         CancellationToken cancellationToken)
     {
+        if (issue.Kind != TaskIssueKind.Task)
+        {
+            return;
+        }
+
         var distinctAssigneeIds = assigneeIds.Distinct().ToArray();
         if (distinctAssigneeIds.Length == 0)
         {
@@ -791,8 +903,8 @@ internal sealed class TaskService(
 
     private async Task NotifyReviewStatusAsync(TaskIssue issue, CancellationToken cancellationToken)
     {
-        var assigneeIds = issue.Assignees.Select(assignee => assignee.UserId).Distinct().ToArray();
-        if (assigneeIds.Length == 0)
+        var reviewerIds = issue.Reviewers.Select(reviewer => reviewer.UserId).Distinct().ToArray();
+        if (reviewerIds.Length == 0)
         {
             return;
         }
@@ -803,8 +915,86 @@ internal sealed class TaskService(
                 issue.StudioId,
                 issue.Title,
                 issue.Status,
-                assigneeIds),
+                reviewerIds),
             cancellationToken);
+    }
+
+    private async Task NotifyCommentMentionsAsync(
+        TaskIssue issue,
+        Guid authorUserId,
+        string body,
+        string? previousBody,
+        CancellationToken cancellationToken)
+    {
+        var members = await auth.ListStudioMembersAsync(issue.StudioId, cancellationToken);
+        var mentionedUserIds = ResolveMentionedUserIds(body, members);
+        if (previousBody is not null)
+        {
+            mentionedUserIds.ExceptWith(ResolveMentionedUserIds(previousBody, members));
+        }
+
+        mentionedUserIds.Remove(authorUserId);
+        if (mentionedUserIds.Count == 0)
+        {
+            return;
+        }
+
+        var author = members.FirstOrDefault(member => member.UserId == authorUserId);
+        await mediator.Publish(
+            new TaskCommentMentionedEvent(
+                issue.Id,
+                issue.StudioId,
+                issue.Title,
+                authorUserId,
+                author?.DisplayName ?? "Someone",
+                mentionedUserIds.ToArray()),
+            cancellationToken);
+    }
+
+    private static HashSet<Guid> ResolveMentionedUserIds(string body, IReadOnlyList<StudioMemberSummary> members)
+    {
+        var aliases = new Dictionary<string, HashSet<Guid>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var member in members)
+        {
+            AddMentionAlias(aliases, member.Email, member.UserId);
+            AddMentionAlias(aliases, member.Email.Split('@')[0], member.UserId);
+            AddMentionAlias(aliases, MentionSlug(member.DisplayName), member.UserId);
+        }
+
+        var result = new HashSet<Guid>();
+        foreach (Match match in MentionRegex.Matches(body))
+        {
+            var token = match.Groups[1].Value.TrimEnd('.', ',', ';', ':', '!', '?', ')', ']', '}');
+            if (aliases.TryGetValue(token, out var users) && users.Count == 1)
+            {
+                result.Add(users.Single());
+            }
+        }
+
+        return result;
+    }
+
+    private static void AddMentionAlias(IDictionary<string, HashSet<Guid>> aliases, string? alias, Guid userId)
+    {
+        if (string.IsNullOrWhiteSpace(alias))
+        {
+            return;
+        }
+
+        var normalized = alias.Trim().ToLowerInvariant();
+        if (!aliases.TryGetValue(normalized, out var users))
+        {
+            users = [];
+            aliases[normalized] = users;
+        }
+
+        users.Add(userId);
+    }
+
+    private static string MentionSlug(string value)
+    {
+        var slug = Regex.Replace(value.Trim().ToLowerInvariant(), @"[^a-z0-9]+", "-");
+        return slug.Trim('-');
     }
 
     private static TaskMilestoneDto ToMilestoneDto(TaskMilestone milestone) =>
@@ -861,5 +1051,9 @@ internal sealed class TaskService(
         var color = value.Trim();
         return string.IsNullOrWhiteSpace(color) ? "#5B6CFF" : color;
     }
+
+    private sealed record IssuePeople(
+        IReadOnlyList<StudioMemberSummary> Assignees,
+        IReadOnlyList<StudioMemberSummary> Reviewers);
 
 }

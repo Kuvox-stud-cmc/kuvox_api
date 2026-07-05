@@ -7,4 +7,4 @@ public sealed record TaskReviewStatusChangedEvent(
     Guid StudioId,
     string Title,
     TaskIssueStatus Status,
-    IReadOnlyCollection<Guid> AssigneeIds) : IIntegrationEvent;
+    IReadOnlyCollection<Guid> ReviewerIds) : IIntegrationEvent;

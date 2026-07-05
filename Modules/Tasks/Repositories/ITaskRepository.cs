@@ -23,6 +23,8 @@ internal interface ITaskRepository
 
     void RemoveAssignee(TaskAssignee assignee);
 
+    void RemoveReviewer(TaskReviewer reviewer);
+
     void RemoveIssueLabel(TaskIssueLabel issueLabel);
 
     Task<IReadOnlyList<TaskMilestone>> ListMilestonesAsync(Guid studioId, CancellationToken cancellationToken = default);
@@ -38,6 +40,8 @@ internal interface ITaskRepository
     Task<IReadOnlyList<TaskLabel>> ListLabelsAsync(Guid studioId, CancellationToken cancellationToken = default);
 
     Task<TaskLabel?> GetLabelAsync(Guid id, CancellationToken cancellationToken = default);
+
+    Task<bool> LabelNameExistsAsync(Guid studioId, string name, Guid? excludeId = null, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<TaskLabel>> GetLabelsAsync(IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken = default);
 

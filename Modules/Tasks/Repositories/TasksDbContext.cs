@@ -15,6 +15,8 @@ internal sealed class TasksDbContext(DbContextOptions<TasksDbContext> options) :
 
     public DbSet<TaskAssignee> Assignees => Set<TaskAssignee>();
 
+    public DbSet<TaskReviewer> Reviewers => Set<TaskReviewer>();
+
     public DbSet<TaskMilestone> Milestones => Set<TaskMilestone>();
 
     public DbSet<TaskLabel> Labels => Set<TaskLabel>();
@@ -88,6 +90,17 @@ internal sealed class TasksDbContext(DbContextOptions<TasksDbContext> options) :
             entity.HasOne(assignee => assignee.TaskIssue)
                 .WithMany(issue => issue.Assignees)
                 .HasForeignKey(assignee => assignee.TaskIssueId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<TaskReviewer>(entity =>
+        {
+            entity.ToTable("task_reviewers");
+            entity.HasKey(reviewer => new { reviewer.TaskIssueId, reviewer.UserId });
+            entity.HasIndex(reviewer => reviewer.UserId);
+            entity.HasOne(reviewer => reviewer.TaskIssue)
+                .WithMany(issue => issue.Reviewers)
+                .HasForeignKey(reviewer => reviewer.TaskIssueId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

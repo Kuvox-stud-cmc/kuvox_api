@@ -33,11 +33,11 @@ internal sealed class TaskReviewStatusChangedHandler(INotificationsRepository no
 {
     public async Task Handle(TaskReviewStatusChangedEvent notification, CancellationToken cancellationToken)
     {
-        foreach (var assigneeId in notification.AssigneeIds.Distinct())
+        foreach (var reviewerId in notification.ReviewerIds.Distinct())
         {
             await notifications.AddAsync(new Notification
             {
-                UserId = assigneeId,
+                UserId = reviewerId,
                 StudioId = notification.StudioId,
                 Type = NotificationType.ReviewStatusChanged,
                 Status = NotificationStatus.Unread,
@@ -57,4 +57,26 @@ internal sealed class TaskReviewStatusChangedHandler(INotificationsRepository no
             TaskIssueStatus.InReview => "in review",
             _ => status.ToString().ToLowerInvariant()
         };
+}
+
+internal sealed class TaskCommentMentionedHandler(INotificationsRepository notifications)
+    : INotificationHandler<TaskCommentMentionedEvent>
+{
+    public async Task Handle(TaskCommentMentionedEvent notification, CancellationToken cancellationToken)
+    {
+        foreach (var userId in notification.MentionedUserIds.Distinct())
+        {
+            await notifications.AddAsync(new Notification
+            {
+                UserId = userId,
+                StudioId = notification.StudioId,
+                Type = NotificationType.TaskCommentMentioned,
+                Status = NotificationStatus.Unread,
+                Message = $"{notification.AuthorDisplayName} mentioned you in {notification.Title}.",
+                LinkUrl = $"/teams/{notification.StudioId}/tasks?taskId={notification.TaskIssueId}",
+            }, cancellationToken);
+        }
+
+        await notifications.SaveChangesAsync(cancellationToken);
+    }
 }

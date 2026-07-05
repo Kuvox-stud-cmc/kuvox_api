@@ -35,6 +35,8 @@ internal sealed class TaskIssue : BaseEntity
 
     public ICollection<TaskAssignee> Assignees { get; } = new List<TaskAssignee>();
 
+    public ICollection<TaskReviewer> Reviewers { get; } = new List<TaskReviewer>();
+
     public ICollection<TaskIssueLabel> Labels { get; } = new List<TaskIssueLabel>();
 
     public ICollection<TaskComment> Comments { get; } = new List<TaskComment>();

@@ -13,6 +13,7 @@ public sealed record TaskIssueDto(
     DateTimeOffset? DueDate,
     TaskMilestoneDto? Milestone,
     IReadOnlyList<TaskAssigneeDto> Assignees,
+    IReadOnlyList<TaskReviewerDto> Reviewers,
     IReadOnlyList<TaskLabelDto> Labels,
     Guid CreatedByUserId,
     DateTimeOffset CreatedAt,
@@ -35,6 +36,7 @@ public sealed record TaskIssueDetailDto(
     DateTimeOffset? DueDate,
     TaskMilestoneDto? Milestone,
     IReadOnlyList<TaskAssigneeDto> Assignees,
+    IReadOnlyList<TaskReviewerDto> Reviewers,
     IReadOnlyList<TaskLabelDto> Labels,
     Guid CreatedByUserId,
     DateTimeOffset CreatedAt,
@@ -48,6 +50,8 @@ public sealed record TaskIssueDetailDto(
     IReadOnlyList<TaskActivityDto> Activity);
 
 public sealed record TaskAssigneeDto(Guid UserId, string Email, string DisplayName);
+
+public sealed record TaskReviewerDto(Guid UserId, string Email, string DisplayName);
 
 public sealed record TaskCommentDto(
     Guid Id,
@@ -107,6 +111,7 @@ public sealed record CreateTaskIssueRequest(
     Guid? ProjectId,
     Guid? ParentTaskIssueId,
     IReadOnlyList<Guid>? AssigneeIds,
+    IReadOnlyList<Guid>? ReviewerIds,
     IReadOnlyList<Guid>? LabelIds);
 
 public sealed record UpdateTaskIssueRequest(
@@ -118,6 +123,7 @@ public sealed record UpdateTaskIssueRequest(
     Guid? ProjectId,
     Guid? ParentTaskIssueId,
     IReadOnlyList<Guid>? AssigneeIds,
+    IReadOnlyList<Guid>? ReviewerIds,
     IReadOnlyList<Guid>? LabelIds);
 
 public sealed record UpdateTaskIssueStatusRequest(TaskIssueStatus Status);
