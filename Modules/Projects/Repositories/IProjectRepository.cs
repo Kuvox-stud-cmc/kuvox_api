@@ -34,7 +34,13 @@ internal interface IProjectRepository
 
     Task<int> DeleteProjectMediaByMediaIdAsync(Guid mediaId, CancellationToken cancellationToken = default);
 
+    Task<ImageComposition?> GetImageCompositionAsync(Guid projectId, CancellationToken cancellationToken = default);
+
     Task AddAsync(Project project, CancellationToken cancellationToken = default);
+
+    Task AddImageCompositionAsync(ImageComposition composition, CancellationToken cancellationToken = default);
+
+    Task AddImageCompositionRevisionAsync(ImageCompositionRevision revision, CancellationToken cancellationToken = default);
 
     Task AddProjectUserAsync(ProjectUser projectUser, CancellationToken cancellationToken = default);
 

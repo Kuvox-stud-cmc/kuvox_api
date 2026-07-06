@@ -1,4 +1,5 @@
 using Kuvox.Api.Modules.Projects.Enums;
+using System.Text.Json;
 
 namespace Kuvox.Api.Modules.Projects.Dtos;
 
@@ -51,3 +52,24 @@ public sealed record ProjectTrashItemDto(
     string? Description,
     DateTimeOffset DeletedAt,
     int PurgesInDays);
+
+public sealed record ImageCompositionDto(
+    Guid ProjectId,
+    JsonElement? DocumentJson,
+    int RevisionNumber,
+    DateTimeOffset? UpdatedAt,
+    Guid? UpdatedByUserId);
+
+public sealed record SaveImageCompositionRequest(
+    JsonElement DocumentJson,
+    JsonElement? OperationsJson,
+    int BaseRevisionNumber);
+
+public sealed record ImageCompositionRevisionDto(
+    Guid Id,
+    Guid ProjectId,
+    int RevisionNumber,
+    JsonElement DocumentJson,
+    JsonElement OperationsJson,
+    DateTimeOffset CreatedAt,
+    Guid CreatedByUserId);

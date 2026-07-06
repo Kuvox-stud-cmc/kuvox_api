@@ -21,6 +21,10 @@ public interface IProjectService
 
     Task<ProjectDto> GetAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default);
 
+    Task<ImageCompositionDto> GetImageCompositionAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default);
+
+    Task<ImageCompositionDto> SaveImageCompositionAsync(Guid id, CallerContext caller, SaveImageCompositionRequest request, CancellationToken cancellationToken = default);
+
     Task<ProjectDto> CreateAsync(WorkspaceScope scope, CallerContext caller, CreateProjectRequest request, CancellationToken cancellationToken = default);
 
     Task<ProjectDto> UpdateAsync(Guid id, CallerContext caller, UpdateProjectRequest request, CancellationToken cancellationToken = default);

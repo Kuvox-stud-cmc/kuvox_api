@@ -23,6 +23,10 @@ public sealed class ProjectsDbContext(DbContextOptions<ProjectsDbContext> option
 
     public DbSet<ProjectVideo> ProjectVideos => Set<ProjectVideo>();
 
+    public DbSet<ImageComposition> ImageCompositions => Set<ImageComposition>();
+
+    public DbSet<ImageCompositionRevision> ImageCompositionRevisions => Set<ImageCompositionRevision>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema(Schema);
@@ -102,6 +106,46 @@ public sealed class ProjectsDbContext(DbContextOptions<ProjectsDbContext> option
             entity.HasOne<Project>()
                 .WithMany()
                 .HasForeignKey(pm => pm.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ImageComposition>(entity =>
+        {
+            entity.ToTable("image_compositions");
+            entity.HasKey(composition => composition.Id);
+            entity.Property(composition => composition.ProjectId).IsRequired();
+            entity.Property(composition => composition.DocumentJson).HasColumnType("jsonb").IsRequired();
+            entity.Property(composition => composition.RevisionNumber).IsRequired();
+            entity.Property(composition => composition.UpdatedByUserId).IsRequired();
+            entity.HasIndex(composition => composition.ProjectId).IsUnique();
+
+            entity.HasOne<Project>()
+                .WithMany()
+                .HasForeignKey(composition => composition.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ImageCompositionRevision>(entity =>
+        {
+            entity.ToTable("image_composition_revisions");
+            entity.HasKey(revision => revision.Id);
+            entity.Property(revision => revision.ImageCompositionId).IsRequired();
+            entity.Property(revision => revision.ProjectId).IsRequired();
+            entity.Property(revision => revision.RevisionNumber).IsRequired();
+            entity.Property(revision => revision.DocumentJson).HasColumnType("jsonb").IsRequired();
+            entity.Property(revision => revision.OperationsJson).HasColumnType("jsonb").IsRequired();
+            entity.Property(revision => revision.CreatedByUserId).IsRequired();
+            entity.HasIndex(revision => revision.ProjectId);
+            entity.HasIndex(revision => new { revision.ProjectId, revision.RevisionNumber }).IsUnique();
+
+            entity.HasOne<ImageComposition>()
+                .WithMany()
+                .HasForeignKey(revision => revision.ImageCompositionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne<Project>()
+                .WithMany()
+                .HasForeignKey(revision => revision.ProjectId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

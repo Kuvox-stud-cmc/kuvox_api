@@ -139,8 +139,17 @@ internal sealed class ProjectRepository(ProjectsDbContext db) : IProjectReposito
         return deleted;
     }
 
+    public Task<ImageComposition?> GetImageCompositionAsync(Guid projectId, CancellationToken cancellationToken = default) =>
+        db.ImageCompositions.FirstOrDefaultAsync(composition => composition.ProjectId == projectId, cancellationToken);
+
     public async Task AddAsync(Project project, CancellationToken cancellationToken = default) =>
         await db.Projects.AddAsync(project, cancellationToken);
+
+    public async Task AddImageCompositionAsync(ImageComposition composition, CancellationToken cancellationToken = default) =>
+        await db.ImageCompositions.AddAsync(composition, cancellationToken);
+
+    public async Task AddImageCompositionRevisionAsync(ImageCompositionRevision revision, CancellationToken cancellationToken = default) =>
+        await db.ImageCompositionRevisions.AddAsync(revision, cancellationToken);
 
     public async Task AddProjectUserAsync(ProjectUser projectUser, CancellationToken cancellationToken = default) =>
         await db.ProjectUsers.AddAsync(projectUser, cancellationToken);

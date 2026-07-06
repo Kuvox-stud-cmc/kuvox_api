@@ -40,6 +40,14 @@ public sealed class ProjectsController(IProjectService projects) : ControllerBas
     [HttpGet("{id:guid}")]
     public Task<ProjectDto> Get(Guid id, CancellationToken ct) => projects.GetAsync(id, Caller(), ct);
 
+    [HttpGet("{id:guid}/image-composition")]
+    public Task<ImageCompositionDto> GetImageComposition(Guid id, CancellationToken ct) =>
+        projects.GetImageCompositionAsync(id, Caller(), ct);
+
+    [HttpPut("{id:guid}/image-composition")]
+    public Task<ImageCompositionDto> SaveImageComposition(Guid id, SaveImageCompositionRequest request, CancellationToken ct) =>
+        projects.SaveImageCompositionAsync(id, Caller(), request, ct);
+
     [HttpPost]
     public Task<ProjectDto> Create([FromQuery] Guid? studioId, CreateProjectRequest request, CancellationToken ct) =>
         projects.CreateAsync(ResolveWorkspace(studioId), Caller(), request, ct);

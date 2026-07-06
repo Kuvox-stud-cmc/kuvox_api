@@ -6,6 +6,7 @@ using Kuvox.Api.Modules.Projects.Models;
 using Kuvox.Api.Modules.Projects.Repositories;
 using Kuvox.Api.Modules.Shared.Dtos;
 using Kuvox.Api.Modules.Shared.Infrastructure;
+using System.Text.Json;
 
 namespace Kuvox.Api.Modules.Projects.Services;
 
@@ -83,6 +84,78 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
         var projectUser = await projects.GetProjectUserAsync(project.Id, caller.UserId, cancellationToken);
         var mediaCount = await GetMediaCountAsync(project.Id, cancellationToken);
         return ToDto(project, projectUser?.IsStarred ?? false, mediaCount);
+    }
+
+    public async Task<ImageCompositionDto> GetImageCompositionAsync(
+        Guid id,
+        CallerContext caller,
+        CancellationToken cancellationToken = default)
+    {
+        var project = await LoadLiveAsync(id, cancellationToken);
+        await RequireImageProjectReadAsync(project, caller, cancellationToken);
+
+        var composition = await projects.GetImageCompositionAsync(project.Id, cancellationToken);
+        return composition is null
+            ? new ImageCompositionDto(project.Id, null, 0, null, null)
+            : ToImageCompositionDto(composition);
+    }
+
+    public async Task<ImageCompositionDto> SaveImageCompositionAsync(
+        Guid id,
+        CallerContext caller,
+        SaveImageCompositionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var project = await LoadLiveAsync(id, cancellationToken);
+        await RequireImageProjectWriteAsync(project, caller, cancellationToken);
+
+        var now = DateTimeOffset.UtcNow;
+        var documentJson = request.DocumentJson.GetRawText();
+        var operationsJson = request.OperationsJson?.GetRawText() ?? "[]";
+        var composition = await projects.GetImageCompositionAsync(project.Id, cancellationToken);
+        var latestRevision = composition?.RevisionNumber ?? 0;
+        if (request.BaseRevisionNumber != latestRevision)
+        {
+            throw DomainException.Conflict("The image composition changed on the server.");
+        }
+
+        if (composition is null)
+        {
+            composition = new ImageComposition
+            {
+                ProjectId = project.Id,
+                DocumentJson = documentJson,
+                RevisionNumber = 1,
+                UpdatedByUserId = caller.UserId,
+                CreatedAt = now,
+                UpdatedAt = now,
+            };
+            await projects.AddImageCompositionAsync(composition, cancellationToken);
+        }
+        else
+        {
+            composition.DocumentJson = documentJson;
+            composition.RevisionNumber += 1;
+            composition.UpdatedByUserId = caller.UserId;
+            composition.UpdatedAt = now;
+        }
+
+        await projects.AddImageCompositionRevisionAsync(
+            new ImageCompositionRevision
+            {
+                ImageCompositionId = composition.Id,
+                ProjectId = project.Id,
+                RevisionNumber = composition.RevisionNumber,
+                DocumentJson = documentJson,
+                OperationsJson = operationsJson,
+                CreatedByUserId = caller.UserId,
+                CreatedAt = now,
+            },
+            cancellationToken);
+
+        project.UpdatedAt = now;
+        await projects.SaveChangesAsync(cancellationToken);
+        return ToImageCompositionDto(composition);
     }
 
     public async Task<ProjectDto> CreateAsync(
@@ -348,6 +421,29 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
         }
     }
 
+    private async Task RequireImageProjectReadAsync(Project project, CallerContext caller, CancellationToken cancellationToken)
+    {
+        if (project.Kind != ProjectKind.Image)
+        {
+            throw DomainException.BadRequest("Image compositions are only available for image projects.");
+        }
+
+        if (!await CanAccessAsync(project, caller, cancellationToken))
+        {
+            throw DomainException.Forbidden("You do not have access to this project.");
+        }
+    }
+
+    private async Task RequireImageProjectWriteAsync(Project project, CallerContext caller, CancellationToken cancellationToken)
+    {
+        if (project.Kind != ProjectKind.Image)
+        {
+            throw DomainException.BadRequest("Image compositions are only available for image projects.");
+        }
+
+        await RequireWriteAsync(project, caller, cancellationToken);
+    }
+
     private async Task RequireTrashManageAsync(Project project, CallerContext caller, CancellationToken cancellationToken)
     {
         if (project.OwnerKind == OwnerKind.Studio && !await CanAccessAsync(project, caller, cancellationToken))
@@ -562,4 +658,12 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
         var purgesInDays = Math.Max(0, (int)Math.Ceiling(remaining.TotalDays));
         return new ProjectTrashItemDto(p.Id, p.Kind, p.Name, p.Description, deletedAt, purgesInDays);
     }
+
+    private static ImageCompositionDto ToImageCompositionDto(ImageComposition composition) =>
+        new(
+            composition.ProjectId,
+            JsonSerializer.Deserialize<JsonElement>(composition.DocumentJson),
+            composition.RevisionNumber,
+            composition.UpdatedAt,
+            composition.UpdatedByUserId);
 }
