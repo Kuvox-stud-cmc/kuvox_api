@@ -207,7 +207,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
             null,
             "ProjectAccessChanged",
             $"A project was shared with you: {project.Name}.",
-            project.Kind == ProjectKind.Video ? $"/editor/{project.Id}" : $"/projects/{project.Id}",
+            EditorPath(project),
             cancellationToken);
     }
 
@@ -427,6 +427,11 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
 
     private static ProjectUser CreateProjectUser(Guid projectId, Guid userId, ProjectRole role) =>
         new() { ProjectId = projectId, UserId = userId, Role = role, IsStarred = false, IsTemplate = false, IsHidden = false };
+
+    private static string EditorPath(Project project) =>
+        project.Kind == ProjectKind.Image
+            ? $"/editor/image/{project.Id}"
+            : $"/editor/video/{project.Id}";
 
     private async Task<IReadOnlyList<Project>> FilterVisibleAsync(
         IReadOnlyList<Project> items,
