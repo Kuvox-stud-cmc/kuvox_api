@@ -1,4 +1,5 @@
 using Kuvox.Api.Modules.Projects.Enums;
+using MediaKind = Kuvox.Api.Modules.Media.Enums.MediaKind;
 using System.Text.Json;
 
 namespace Kuvox.Api.Modules.Projects.Dtos;
@@ -43,6 +44,29 @@ public sealed record ProjectAccessMemberDto(
     bool CanManage);
 
 public sealed record ToggleProjectStarRequest(bool IsStarred);
+
+public sealed record AttachProjectMediaRequest(IReadOnlyList<Guid> MediaIds);
+
+public sealed record ProjectMediaDto(
+    Guid MediaId,
+    MediaKind? Kind,
+    string Availability,
+    string? Filename,
+    Guid? OwnerId,
+    Kuvox.Api.Modules.Media.Enums.OwnerKind? OwnerKind,
+    string? Status,
+    string? StorageKey,
+    long? SizeBytes,
+    string? CanonicalStorageKey,
+    string? ProxyStorageKey,
+    string? ThumbnailStorageKey,
+    string? ErrorMessage,
+    double? DurationSeconds,
+    int? Width,
+    int? Height,
+    string? Codec,
+    double? FrameRate,
+    DateTimeOffset? CreatedAt);
 
 /// <summary>A trashed project plus how long until auto-purge removes it (7-day window).</summary>
 public sealed record ProjectTrashItemDto(

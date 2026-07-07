@@ -20,6 +20,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 using Serilog;
+using Serilog.Context;
 using Serilog.Formatting.Compact;
 
 // Load a local .env file if present (no-op in Docker where env vars are injected
@@ -109,6 +110,32 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 var app = builder.Build();
 
 app.UseForwardedHeaders();
+
+app.Use(async (context, next) =>
+{
+    var requestId = context.Request.Headers.TryGetValue("x-request-id", out var requestHeader)
+        && !string.IsNullOrWhiteSpace(requestHeader.ToString())
+            ? requestHeader.ToString()
+            : context.TraceIdentifier;
+    var editorCorrelationId = context.Request.Headers.TryGetValue("x-kuvox-editor-correlation-id", out var editorHeader)
+        && !string.IsNullOrWhiteSpace(editorHeader.ToString())
+            ? editorHeader.ToString()
+            : requestId;
+
+    context.TraceIdentifier = requestId;
+    context.Response.OnStarting(() =>
+    {
+        context.Response.Headers["x-request-id"] = requestId;
+        context.Response.Headers["x-kuvox-editor-correlation-id"] = editorCorrelationId;
+        return Task.CompletedTask;
+    });
+
+    using (LogContext.PushProperty("RequestId", requestId))
+    using (LogContext.PushProperty("EditorCorrelationId", editorCorrelationId))
+    {
+        await next();
+    }
+});
 
 // One structured log line per request (method, path, status, elapsed).
 app.UseSerilogRequestLogging();

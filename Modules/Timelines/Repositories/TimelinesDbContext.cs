@@ -25,7 +25,7 @@ public sealed class TimelinesDbContext(DbContextOptions<TimelinesDbContext> opti
             entity.ToTable("timelines");
             entity.HasKey(t => t.Id);
             entity.Property(t => t.Name).HasMaxLength(200).IsRequired();
-            entity.HasIndex(t => t.ProjectId);
+            entity.HasIndex(t => t.ProjectId).IsUnique();
         });
 
         modelBuilder.Entity<TimelineRevision>(entity =>
@@ -33,6 +33,12 @@ public sealed class TimelinesDbContext(DbContextOptions<TimelinesDbContext> opti
             entity.ToTable("timeline_revisions");
             entity.HasKey(r => r.Id);
             entity.Property(r => r.Operations).HasColumnType("jsonb").IsRequired();
+            entity.Property(r => r.DocumentJson).HasColumnType("jsonb").IsRequired();
+            entity.Property(r => r.DocumentSchemaVersion).IsRequired();
+            entity.Property(r => r.OperationsJson).HasColumnType("jsonb").IsRequired();
+            entity.Property(r => r.Source).HasMaxLength(64);
+            entity.Property(r => r.Label).HasMaxLength(200);
+            entity.Property(r => r.CreatedByUserId).IsRequired();
             entity.HasIndex(r => new { r.TimelineId, r.RevisionNumber }).IsUnique();
         });
 
@@ -40,9 +46,12 @@ public sealed class TimelinesDbContext(DbContextOptions<TimelinesDbContext> opti
         {
             entity.ToTable("render_jobs");
             entity.HasKey(j => j.Id);
+            entity.Property(j => j.RequestedByUserId).IsRequired();
+            entity.Property(j => j.SettingsJson).HasColumnType("jsonb").IsRequired();
             entity.Property(j => j.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(j => j.OutputStorageKey).HasMaxLength(1024);
             entity.HasIndex(j => j.TimelineId);
+            entity.HasIndex(j => j.RevisionId);
         });
 
         modelBuilder.Entity<CommandHistory>(entity =>

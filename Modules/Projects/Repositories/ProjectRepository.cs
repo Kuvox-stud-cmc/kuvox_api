@@ -1,6 +1,7 @@
 using Kuvox.Api.Modules.Projects.Enums;
 using Kuvox.Api.Modules.Projects.Models;
 using Microsoft.EntityFrameworkCore;
+using MediaKind = Kuvox.Api.Modules.Media.Enums.MediaKind;
 
 namespace Kuvox.Api.Modules.Projects.Repositories;
 
@@ -111,6 +112,110 @@ internal sealed class ProjectRepository(ProjectsDbContext db) : IProjectReposito
             cancellationToken);
 
         return counts;
+    }
+
+    public async Task<(IReadOnlyList<ProjectMediaRow> Items, int Total)> ListProjectMediaAsync(
+        Guid projectId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        var imageRows = db.ProjectImages
+            .Where(pm => pm.ProjectId == projectId);
+        var audioRows = db.ProjectAudios
+            .Where(pm => pm.ProjectId == projectId);
+        var videoRows = db.ProjectVideos
+            .Where(pm => pm.ProjectId == projectId);
+
+        var imageCount = await imageRows.CountAsync(cancellationToken);
+        var audioCount = await audioRows.CountAsync(cancellationToken);
+        var videoCount = await videoRows.CountAsync(cancellationToken);
+        var total = imageCount + audioCount + videoCount;
+        var take = page * pageSize;
+
+        var images = await imageRows
+            .OrderByDescending(pm => pm.CreatedAt)
+            .Take(take)
+            .Select(pm => new ProjectMediaRow(pm.ProjectId, pm.MediaId, MediaKind.Image, pm.CreatedAt))
+            .ToListAsync(cancellationToken);
+        var audios = await audioRows
+            .OrderByDescending(pm => pm.CreatedAt)
+            .Take(take)
+            .Select(pm => new ProjectMediaRow(pm.ProjectId, pm.MediaId, MediaKind.Audio, pm.CreatedAt))
+            .ToListAsync(cancellationToken);
+        var videos = await videoRows
+            .OrderByDescending(pm => pm.CreatedAt)
+            .Take(take)
+            .Select(pm => new ProjectMediaRow(pm.ProjectId, pm.MediaId, MediaKind.Video, pm.CreatedAt))
+            .ToListAsync(cancellationToken);
+
+        var items = images
+            .Concat(audios)
+            .Concat(videos)
+            .OrderByDescending(row => row.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        return (items, total);
+    }
+
+    public async Task<IReadOnlySet<Guid>> GetAssociatedMediaIdsAsync(
+        Guid projectId,
+        IEnumerable<Guid> mediaIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = mediaIds.Distinct().ToArray();
+        if (ids.Length == 0)
+        {
+            return new HashSet<Guid>();
+        }
+
+        var imageIds = await db.ProjectImages
+            .Where(pm => pm.ProjectId == projectId && ids.Contains(pm.MediaId))
+            .Select(pm => pm.MediaId)
+            .ToListAsync(cancellationToken);
+        var audioIds = await db.ProjectAudios
+            .Where(pm => pm.ProjectId == projectId && ids.Contains(pm.MediaId))
+            .Select(pm => pm.MediaId)
+            .ToListAsync(cancellationToken);
+        var videoIds = await db.ProjectVideos
+            .Where(pm => pm.ProjectId == projectId && ids.Contains(pm.MediaId))
+            .Select(pm => pm.MediaId)
+            .ToListAsync(cancellationToken);
+
+        return imageIds.Concat(audioIds).Concat(videoIds).ToHashSet();
+    }
+
+    public async Task AddProjectMediaAsync(
+        Guid projectId,
+        Guid mediaId,
+        MediaKind kind,
+        CancellationToken cancellationToken = default)
+    {
+        switch (kind)
+        {
+            case MediaKind.Image:
+                if (!await db.ProjectImages.AnyAsync(pm => pm.ProjectId == projectId && pm.MediaId == mediaId, cancellationToken))
+                {
+                    await db.ProjectImages.AddAsync(new ProjectImage { ProjectId = projectId, MediaId = mediaId }, cancellationToken);
+                }
+                break;
+            case MediaKind.Audio:
+                if (!await db.ProjectAudios.AnyAsync(pm => pm.ProjectId == projectId && pm.MediaId == mediaId, cancellationToken))
+                {
+                    await db.ProjectAudios.AddAsync(new ProjectAudio { ProjectId = projectId, MediaId = mediaId }, cancellationToken);
+                }
+                break;
+            case MediaKind.Video:
+                if (!await db.ProjectVideos.AnyAsync(pm => pm.ProjectId == projectId && pm.MediaId == mediaId, cancellationToken))
+                {
+                    await db.ProjectVideos.AddAsync(new ProjectVideo { ProjectId = projectId, MediaId = mediaId }, cancellationToken);
+                }
+                break;
+            default:
+                throw new NotSupportedException($"Unsupported media kind '{kind}'.");
+        }
     }
 
     private static async Task AddProjectMediaCountsAsync<TProjectMedia>(

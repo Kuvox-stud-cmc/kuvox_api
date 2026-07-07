@@ -8,14 +8,36 @@ internal sealed class TimelineRepository(TimelinesDbContext db) : ITimelineRepos
     public Task<Timeline?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
         db.Timelines.FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
 
+    public Task<Timeline?> GetByProjectAsync(Guid projectId, CancellationToken cancellationToken = default) =>
+        db.Timelines
+            .OrderBy(t => t.CreatedAt)
+            .FirstOrDefaultAsync(t => t.ProjectId == projectId, cancellationToken);
+
     public async Task<IReadOnlyList<Timeline>> ListByProjectAsync(Guid projectId, CancellationToken cancellationToken = default) =>
         await db.Timelines.Where(t => t.ProjectId == projectId).ToListAsync(cancellationToken);
 
     public Task<int> CountByProjectAsync(Guid projectId, CancellationToken cancellationToken = default) =>
         db.Timelines.CountAsync(t => t.ProjectId == projectId, cancellationToken);
 
+    public Task<TimelineRevision?> GetLatestRevisionAsync(Guid timelineId, CancellationToken cancellationToken = default) =>
+        db.TimelineRevisions
+            .Where(revision => revision.TimelineId == timelineId)
+            .OrderByDescending(revision => revision.RevisionNumber)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    public Task<TimelineRevision?> GetRevisionByNumberAsync(Guid timelineId, int revisionNumber, CancellationToken cancellationToken = default) =>
+        db.TimelineRevisions.FirstOrDefaultAsync(
+            revision => revision.TimelineId == timelineId && revision.RevisionNumber == revisionNumber,
+            cancellationToken);
+
     public async Task AddAsync(Timeline timeline, CancellationToken cancellationToken = default) =>
         await db.Timelines.AddAsync(timeline, cancellationToken);
+
+    public async Task AddRevisionAsync(TimelineRevision revision, CancellationToken cancellationToken = default) =>
+        await db.TimelineRevisions.AddAsync(revision, cancellationToken);
+
+    public async Task AddRenderJobAsync(RenderJob renderJob, CancellationToken cancellationToken = default) =>
+        await db.RenderJobs.AddAsync(renderJob, cancellationToken);
 
     public Task SaveChangesAsync(CancellationToken cancellationToken = default) =>
         db.SaveChangesAsync(cancellationToken);

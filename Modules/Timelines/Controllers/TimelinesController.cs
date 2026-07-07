@@ -1,13 +1,13 @@
 using Kuvox.Api.Modules.Timelines.Dtos;
 using Kuvox.Api.Modules.Timelines.Services;
+using Kuvox.Api.Modules.Shared.Infrastructure;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Kuvox.Api.Modules.Timelines.Controllers;
 
 /// <summary>
-/// Real Timelines endpoints, backed by the not-yet-implemented <see cref="ITimelineService"/>
-/// (returns <c>501</c>). Use <c>/api/mock/timelines</c> for working fake data.
+/// Real Timelines endpoints for video editor document sync and render job creation.
 /// </summary>
 [Authorize]
 [ApiController]
@@ -15,6 +15,14 @@ namespace Kuvox.Api.Modules.Timelines.Controllers;
 [Produces("application/json")]
 public sealed class TimelinesController(ITimelineService timelines) : ControllerBase
 {
+    [HttpGet("projects/{projectId:guid}/current")]
+    public Task<TimelineDocumentDto> GetCurrentDocument(Guid projectId, CancellationToken ct) =>
+        timelines.GetCurrentDocumentAsync(projectId, Caller(), ct);
+
+    [HttpPut("projects/{projectId:guid}/current")]
+    public Task<TimelineDocumentDto> SaveCurrentDocument(Guid projectId, SaveTimelineDocumentRequest request, CancellationToken ct) =>
+        timelines.SaveCurrentDocumentAsync(projectId, Caller(), request, ct);
+
     [HttpGet]
     public Task<IReadOnlyList<TimelineDto>> ListByProject([FromQuery] Guid projectId, CancellationToken ct) =>
         timelines.ListByProjectAsync(projectId, ct);
@@ -28,6 +36,16 @@ public sealed class TimelinesController(ITimelineService timelines) : Controller
         timelines.AddRevisionAsync(id, request, ct);
 
     [HttpPost("{id:guid}/render")]
-    public Task<RenderJobDto> RequestRender(Guid id, CancellationToken ct) =>
-        timelines.RequestRenderAsync(id, ct);
+    public Task<RenderJobDto> RequestRender(Guid id, RenderTimelineRequest request, CancellationToken ct) =>
+        timelines.RequestRenderAsync(id, Caller(), request, ct);
+
+    [HttpPost("projects/{projectId:guid}/performance")]
+    public async Task<IActionResult> RecordPerformance(Guid projectId, RecordVideoEditorPerformanceRequest request, CancellationToken ct)
+    {
+        await timelines.RecordPerformanceAsync(projectId, Caller(), request, ct);
+        return NoContent();
+    }
+
+    private CallerContext Caller() =>
+        User.ToCallerContext() ?? throw DomainException.Forbidden("Invalid token.");
 }

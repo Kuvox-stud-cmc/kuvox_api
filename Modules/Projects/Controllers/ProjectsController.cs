@@ -40,6 +40,18 @@ public sealed class ProjectsController(IProjectService projects) : ControllerBas
     [HttpGet("{id:guid}")]
     public Task<ProjectDto> Get(Guid id, CancellationToken ct) => projects.GetAsync(id, Caller(), ct);
 
+    [HttpGet("{id:guid}/media")]
+    public Task<PagedResult<ProjectMediaDto>> ListMedia(
+        Guid id,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 100,
+        CancellationToken ct = default) =>
+        projects.ListMediaAsync(id, Caller(), page, pageSize, ct);
+
+    [HttpPost("{id:guid}/media")]
+    public Task<IReadOnlyList<ProjectMediaDto>> AttachMedia(Guid id, AttachProjectMediaRequest request, CancellationToken ct) =>
+        projects.AttachMediaAsync(id, Caller(), request, ct);
+
     [HttpGet("{id:guid}/image-composition")]
     public Task<ImageCompositionDto> GetImageComposition(Guid id, CancellationToken ct) =>
         projects.GetImageCompositionAsync(id, Caller(), ct);

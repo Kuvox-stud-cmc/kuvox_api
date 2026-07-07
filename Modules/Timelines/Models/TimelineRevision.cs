@@ -12,6 +12,18 @@ public sealed class TimelineRevision : BaseEntity
 
     public int RevisionNumber { get; set; }
 
+    public string DocumentJson { get; set; } = "{}";
+
+    public int DocumentSchemaVersion { get; set; } = 1;
+
+    public string OperationsJson { get; set; } = "[]";
+
+    public string? Source { get; set; }
+
+    public string? Label { get; set; }
+
+    public required Guid CreatedByUserId { get; set; }
+
     /// <summary>
     /// The flat list of typed editing operations as raw JSON, persisted to a Postgres
     /// <c>jsonb</c> column. The operation schema itself is validated in the AI service.

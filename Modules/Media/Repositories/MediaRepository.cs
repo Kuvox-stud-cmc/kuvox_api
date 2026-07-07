@@ -11,6 +11,21 @@ internal sealed class MediaRepository(MediaDbContext db) : IMediaRepository
     public Task<Models.Media?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
         db.Media.FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
 
+    public async Task<IReadOnlyList<Models.Media>> ListByIdsAsync(
+        IReadOnlyCollection<Guid> ids,
+        CancellationToken cancellationToken = default)
+    {
+        var distinctIds = ids.Distinct().ToArray();
+        if (distinctIds.Length == 0)
+        {
+            return [];
+        }
+
+        return await db.Media
+            .Where(m => distinctIds.Contains(m.Id))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<(IReadOnlyList<Models.Media> Items, int Total)> ListByWorkspaceAsync(
         OwnerKind ownerKind, Guid ownerId, int page, int pageSize, CancellationToken cancellationToken = default)
     {

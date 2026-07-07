@@ -1,9 +1,16 @@
 namespace Kuvox.Api.Modules.Media.Contracts;
 
+using Kuvox.Api.Modules.Shared.Infrastructure;
+
 /// <summary>Public cross-module API of the Media module (Rule 2).</summary>
 public interface IMediaApi
 {
     Task<MediaSummary?> GetSummaryAsync(Guid mediaId, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<MediaResolution>> ResolveAsync(
+        IReadOnlyCollection<Guid> mediaIds,
+        CallerContext caller,
+        CancellationToken cancellationToken = default);
 
     Task<MediaWorkspaceUsageSummary> GetWorkspaceUsageAsync(Guid ownerId, Enums.OwnerKind ownerKind, CancellationToken cancellationToken = default);
 }
