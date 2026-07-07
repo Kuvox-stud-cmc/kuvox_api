@@ -9,6 +9,10 @@ internal interface IMediaRepository
 {
     Task<Models.Media?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<Models.Media>> ListByIdsAsync(
+        IReadOnlyCollection<Guid> ids,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Live (non-deleted) media owned by a workspace, newest-updated first, paged.</summary>
     Task<(IReadOnlyList<Models.Media> Items, int Total)> ListByWorkspaceAsync(
         OwnerKind ownerKind, Guid ownerId, int page, int pageSize, CancellationToken cancellationToken = default);

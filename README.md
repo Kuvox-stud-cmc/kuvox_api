@@ -70,6 +70,26 @@ The API will be available at `https://localhost:5001` (or `http://localhost:5000
 | `Timelines` | `timelines.{timelines,timeline_revisions,render_jobs,command_history}`| Timeline state, revisions (JSONB ops), render jobs, NL command history  |
 | `Shared`    | — (no tables)                                                         | Shared kernel: `BaseEntity`, common DTOs, MediatR markers, health, 501 handler |
 
+### Timelines V-009 Contract Notes
+
+The video editor uses `GET/PUT /api/timelines/projects/{projectId}/current` as its
+canonical load/save surface. Saves are snapshot-first: `documentJson` is the
+authoritative video timeline document, while `operationsJson` is an audit array
+for client-side operation batches. Writes must target video projects, require
+project write access, and use `baseRevisionNumber` for optimistic concurrency.
+
+`POST /api/timelines/{timelineId}/render` queues a `render_jobs` row for the
+latest synced revision and returns no direct object-storage URL in V-009. It
+validates the route/body timeline id, requested latest revision, project write
+access, video project kind, and MVP export settings. Rendering dispatch and
+worker callbacks are intentionally out of scope for this slice.
+
+Server command-history endpoints are not part of V-009. The future backend
+contract should store command history by `projectId` and `userId`, include the
+command text plus intent/status/result metadata and timestamps, and scope reads
+and writes through the same project read/write permission checks. The frontend
+continues to use Dexie-backed command history until that server surface exists.
+
 This API is a **modular monolith** built for later extraction into services. Four rules
 are enforced (by convention within the single assembly — see the caveat below):
 
@@ -198,4 +218,3 @@ docker run -p 5000:5000 kuvox-api
 - **[kuvox-frontend](../frontend)** — React web frontend
 - **[kuvox-ai](../ai-service)** — Python AI / media service
 - **[kuvox-mobile](../mobile)** — React Native (Expo) mobile client
-

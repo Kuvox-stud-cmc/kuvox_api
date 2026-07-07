@@ -23,6 +23,80 @@ namespace Kuvox.Api.Modules.Projects.Repositories.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Kuvox.Api.Modules.Projects.Models.ImageComposition", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DocumentJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("RevisionNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UpdatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId")
+                        .IsUnique();
+
+                    b.ToTable("image_compositions", "projects");
+                });
+
+            modelBuilder.Entity("Kuvox.Api.Modules.Projects.Models.ImageCompositionRevision", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DocumentJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid>("ImageCompositionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("OperationsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("RevisionNumber")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ImageCompositionId");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("ProjectId", "RevisionNumber")
+                        .IsUnique();
+
+                    b.ToTable("image_composition_revisions", "projects");
+                });
+
             modelBuilder.Entity("Kuvox.Api.Modules.Projects.Models.Project", b =>
                 {
                     b.Property<Guid>("Id")
@@ -204,6 +278,30 @@ namespace Kuvox.Api.Modules.Projects.Repositories.Migrations
                     b.HasIndex("MediaId");
 
                     b.ToTable("project_videos", "projects");
+                });
+
+            modelBuilder.Entity("Kuvox.Api.Modules.Projects.Models.ImageComposition", b =>
+                {
+                    b.HasOne("Kuvox.Api.Modules.Projects.Models.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Kuvox.Api.Modules.Projects.Models.ImageCompositionRevision", b =>
+                {
+                    b.HasOne("Kuvox.Api.Modules.Projects.Models.ImageComposition", null)
+                        .WithMany()
+                        .HasForeignKey("ImageCompositionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Kuvox.Api.Modules.Projects.Models.Project", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Kuvox.Api.Modules.Projects.Models.ProjectUser", b =>

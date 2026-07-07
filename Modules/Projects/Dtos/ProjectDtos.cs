@@ -1,4 +1,6 @@
 using Kuvox.Api.Modules.Projects.Enums;
+using MediaKind = Kuvox.Api.Modules.Media.Enums.MediaKind;
+using System.Text.Json;
 
 namespace Kuvox.Api.Modules.Projects.Dtos;
 
@@ -43,6 +45,29 @@ public sealed record ProjectAccessMemberDto(
 
 public sealed record ToggleProjectStarRequest(bool IsStarred);
 
+public sealed record AttachProjectMediaRequest(IReadOnlyList<Guid> MediaIds);
+
+public sealed record ProjectMediaDto(
+    Guid MediaId,
+    MediaKind? Kind,
+    string Availability,
+    string? Filename,
+    Guid? OwnerId,
+    Kuvox.Api.Modules.Media.Enums.OwnerKind? OwnerKind,
+    string? Status,
+    string? StorageKey,
+    long? SizeBytes,
+    string? CanonicalStorageKey,
+    string? ProxyStorageKey,
+    string? ThumbnailStorageKey,
+    string? ErrorMessage,
+    double? DurationSeconds,
+    int? Width,
+    int? Height,
+    string? Codec,
+    double? FrameRate,
+    DateTimeOffset? CreatedAt);
+
 /// <summary>A trashed project plus how long until auto-purge removes it (7-day window).</summary>
 public sealed record ProjectTrashItemDto(
     Guid Id,
@@ -51,3 +76,24 @@ public sealed record ProjectTrashItemDto(
     string? Description,
     DateTimeOffset DeletedAt,
     int PurgesInDays);
+
+public sealed record ImageCompositionDto(
+    Guid ProjectId,
+    JsonElement? DocumentJson,
+    int RevisionNumber,
+    DateTimeOffset? UpdatedAt,
+    Guid? UpdatedByUserId);
+
+public sealed record SaveImageCompositionRequest(
+    JsonElement DocumentJson,
+    JsonElement? OperationsJson,
+    int BaseRevisionNumber);
+
+public sealed record ImageCompositionRevisionDto(
+    Guid Id,
+    Guid ProjectId,
+    int RevisionNumber,
+    JsonElement DocumentJson,
+    JsonElement OperationsJson,
+    DateTimeOffset CreatedAt,
+    Guid CreatedByUserId);

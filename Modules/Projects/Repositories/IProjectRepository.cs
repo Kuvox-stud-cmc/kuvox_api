@@ -1,5 +1,6 @@
 using Kuvox.Api.Modules.Projects.Enums;
 using Kuvox.Api.Modules.Projects.Models;
+using MediaKind = Kuvox.Api.Modules.Media.Enums.MediaKind;
 
 namespace Kuvox.Api.Modules.Projects.Repositories;
 
@@ -32,9 +33,24 @@ internal interface IProjectRepository
     Task<IReadOnlyDictionary<Guid, int>> GetMediaCountsAsync(
         IEnumerable<Guid> projectIds, CancellationToken cancellationToken = default);
 
+    Task<(IReadOnlyList<ProjectMediaRow> Items, int Total)> ListProjectMediaAsync(
+        Guid projectId, int page, int pageSize, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlySet<Guid>> GetAssociatedMediaIdsAsync(
+        Guid projectId, IEnumerable<Guid> mediaIds, CancellationToken cancellationToken = default);
+
+    Task AddProjectMediaAsync(
+        Guid projectId, Guid mediaId, MediaKind kind, CancellationToken cancellationToken = default);
+
     Task<int> DeleteProjectMediaByMediaIdAsync(Guid mediaId, CancellationToken cancellationToken = default);
 
+    Task<ImageComposition?> GetImageCompositionAsync(Guid projectId, CancellationToken cancellationToken = default);
+
     Task AddAsync(Project project, CancellationToken cancellationToken = default);
+
+    Task AddImageCompositionAsync(ImageComposition composition, CancellationToken cancellationToken = default);
+
+    Task AddImageCompositionRevisionAsync(ImageCompositionRevision revision, CancellationToken cancellationToken = default);
 
     Task AddProjectUserAsync(ProjectUser projectUser, CancellationToken cancellationToken = default);
 
@@ -44,3 +60,5 @@ internal interface IProjectRepository
 
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
+
+internal sealed record ProjectMediaRow(Guid ProjectId, Guid MediaId, MediaKind Kind, DateTimeOffset CreatedAt);

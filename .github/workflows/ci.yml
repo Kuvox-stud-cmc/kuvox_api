@@ -18,19 +18,14 @@ jobs:
           dotnet-version: "10.0.x"
 
       - name: Restore dependencies
-        run: dotnet restore
+        run: |
+          dotnet restore api.csproj
+          dotnet restore Kuvox.Api.Tests/Kuvox.Api.Tests.csproj
 
       - name: Build
-        run: dotnet build --no-restore --configuration Release
-
-      # Optional: run tests if any test projects exist
-      # - name: Test
-      #   run: dotnet test --no-build --configuration Release --verbosity normal
+        run: |
+          dotnet build api.csproj --no-restore --configuration Release
+          dotnet build Kuvox.Api.Tests/Kuvox.Api.Tests.csproj --no-restore --configuration Release
 
       - name: Test
-        run: |
-          if find . -name '*.csproj' -exec grep -l 'Microsoft.NET.Test.Sdk' {} + | grep -q .; then
-            dotnet test --no-build --configuration Release --verbosity normal
-          else
-            echo "No test project found — skipping tests."
-          fi
+        run: dotnet test Kuvox.Api.Tests/Kuvox.Api.Tests.csproj --no-build --configuration Release --verbosity normal

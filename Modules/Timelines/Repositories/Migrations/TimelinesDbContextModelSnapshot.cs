@@ -73,6 +73,13 @@ namespace Kuvox.Api.Modules.Timelines.Repositories.Migrations
                     b.Property<Guid?>("RevisionId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid>("RequestedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SettingsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -85,6 +92,8 @@ namespace Kuvox.Api.Modules.Timelines.Repositories.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("RevisionId");
 
                     b.HasIndex("TimelineId");
 
@@ -113,7 +122,8 @@ namespace Kuvox.Api.Modules.Timelines.Repositories.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ProjectId");
+                    b.HasIndex("ProjectId")
+                        .IsUnique();
 
                     b.ToTable("timelines", "timelines");
                 });
@@ -127,12 +137,34 @@ namespace Kuvox.Api.Modules.Timelines.Repositories.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DocumentJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<int>("DocumentSchemaVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Label")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<string>("Operations")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("OperationsJson")
                         .IsRequired()
                         .HasColumnType("jsonb");
 
                     b.Property<int>("RevisionNumber")
                         .HasColumnType("integer");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<Guid>("TimelineId")
                         .HasColumnType("uuid");
