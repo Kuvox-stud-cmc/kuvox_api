@@ -62,6 +62,11 @@ public sealed class AuthController(IAuthService auth) : ControllerBase
         Ok(await auth.UpdatePreferencesAsync(CurrentUserId(), request, ct));
 
     [Authorize]
+    [HttpPatch("me/onboarding")]
+    public async Task<ActionResult<OnboardingProfileDto>> UpdateOnboarding(UpdateOnboardingProfileRequest request, CancellationToken ct) =>
+        Ok(await auth.UpdateOnboardingProfileAsync(CurrentUserId(), request, ct));
+
+    [Authorize]
     [HttpPost("me/change-password")]
     public async Task<IActionResult> ChangePassword(ChangePasswordRequest request, CancellationToken ct)
     {

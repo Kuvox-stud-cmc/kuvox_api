@@ -26,6 +26,8 @@ public interface IAuthService
 
     Task<UserPreferencesDto> UpdatePreferencesAsync(Guid userId, UpdatePreferencesRequest request, CancellationToken cancellationToken = default);
 
+    Task<OnboardingProfileDto> UpdateOnboardingProfileAsync(Guid userId, UpdateOnboardingProfileRequest request, CancellationToken cancellationToken = default);
+
     Task ChangePasswordAsync(Guid userId, ChangePasswordRequest request, CancellationToken cancellationToken = default);
 
     Task<VerifyEmailResult> VerifyEmailAsync(string token, CancellationToken cancellationToken = default);

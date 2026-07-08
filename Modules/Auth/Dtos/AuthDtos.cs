@@ -29,6 +29,12 @@ public sealed record UserPreferencesDto(
     string DefaultEditorMode
 );
 
+public sealed record OnboardingProfileDto(
+    string Personality,
+    IReadOnlyList<string> CreationGoals,
+    DateTimeOffset? OnboardingCompletedAt
+);
+
 public sealed record PlanLimitsDto(
     string Plan,
     long StorageBytes,
@@ -40,6 +46,7 @@ public sealed record PlanLimitsDto(
 public sealed record UserSettingsDto(
     UserDto User,
     UserPreferencesDto Preferences,
+    OnboardingProfileDto Onboarding,
     PlanLimitsDto PlanLimits
 );
 
@@ -50,6 +57,11 @@ public sealed record UpdatePreferencesRequest(
     bool ProductUpdatesEnabled,
     bool WeeklyDigestEnabled,
     string DefaultEditorMode
+);
+
+public sealed record UpdateOnboardingProfileRequest(
+    string Personality,
+    IReadOnlyList<string>? CreationGoals
 );
 
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);

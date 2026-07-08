@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Kuvox.Api.Modules.Auth.Contracts;
 using Kuvox.Api.Modules.Auth.Dtos;
 using Kuvox.Api.Modules.Auth.Enums;
@@ -29,6 +30,16 @@ internal sealed class AuthService(
 {
     private static readonly TimeSpan VerificationTokenLifetime = TimeSpan.FromHours(24);
     private static readonly TimeSpan ResetTokenLifetime = TimeSpan.FromHours(1);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly HashSet<string> AllowedCreationGoals = new(StringComparer.Ordinal)
+    {
+        "youtube",
+        "social_clips",
+        "highlights",
+        "color_grading",
+        "podcasts",
+        "tutorials",
+    };
 
     private readonly string _frontendBaseUrl = frontendOptions.Value.BaseUrl.TrimEnd('/');
 
@@ -181,6 +192,24 @@ internal sealed class AuthService(
         await users.SaveChangesAsync(cancellationToken);
 
         return ToPreferencesDto(user);
+    }
+
+    public async Task<OnboardingProfileDto> UpdateOnboardingProfileAsync(
+        Guid userId,
+        UpdateOnboardingProfileRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await users.GetByIdAsync(userId, cancellationToken)
+            ?? throw AuthException.NotFound("User not found.");
+
+        user.Personality = NormalizePersonality(request.Personality);
+        var creationGoals = NormalizeCreationGoals(request.CreationGoals ?? []);
+        user.CreationGoalsJson = JsonSerializer.Serialize(creationGoals, JsonOptions);
+        user.OnboardingCompletedAt = DateTimeOffset.UtcNow;
+
+        await users.SaveChangesAsync(cancellationToken);
+
+        return ToOnboardingProfileDto(user);
     }
 
     public async Task ChangePasswordAsync(
@@ -406,7 +435,7 @@ internal sealed class AuthService(
         new(user.Id, user.Email, user.DisplayName, "user", user.Plan.ToString(), user.EmailVerifiedAt is not null, user.CreatedAt);
 
     private static UserSettingsDto ToSettingsDto(User user) =>
-        new(ToDto(user), ToPreferencesDto(user), ToPlanLimitsDto(user.Plan));
+        new(ToDto(user), ToPreferencesDto(user), ToOnboardingProfileDto(user), ToPlanLimitsDto(user.Plan));
 
     private static UserPreferencesDto ToPreferencesDto(User user) =>
         new(
@@ -415,12 +444,82 @@ internal sealed class AuthService(
             user.WeeklyDigestEnabled,
             user.DefaultEditorMode);
 
+    private static OnboardingProfileDto ToOnboardingProfileDto(User user) =>
+        new(
+            PersonalityKey(user.Personality),
+            DeserializeCreationGoals(user.CreationGoalsJson),
+            user.OnboardingCompletedAt);
+
     private static PlanLimitsDto ToPlanLimitsDto(UserPlan plan) =>
         plan switch
         {
             UserPlan.Creator => new(plan.ToString(), 100L * 1024L * 1024L * 1024L, 500, 5, true),
             _ => new(plan.ToString(), 5L * 1024L * 1024L * 1024L, 10, 1, false),
         };
+
+    private static UserPersonality NormalizePersonality(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw AuthException.BadRequest("Onboarding personality is required.");
+        }
+
+        var normalized = value.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "creator" or "editor" => UserPersonality.Creator,
+            "casual" => UserPersonality.Casual,
+            "professional" => UserPersonality.Professional,
+            _ => throw AuthException.BadRequest("Invalid onboarding personality."),
+        };
+    }
+
+    private static IReadOnlyList<string> NormalizeCreationGoals(IReadOnlyList<string> values)
+    {
+        var normalized = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var value in values)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            var goal = value.Trim().ToLowerInvariant();
+            if (!AllowedCreationGoals.Contains(goal))
+            {
+                throw AuthException.BadRequest("Invalid onboarding creation goal.");
+            }
+
+            if (seen.Add(goal))
+            {
+                normalized.Add(goal);
+            }
+        }
+
+        return normalized;
+    }
+
+    private static string PersonalityKey(UserPersonality personality) =>
+        personality switch
+        {
+            UserPersonality.Creator => "creator",
+            UserPersonality.Professional => "professional",
+            _ => "casual",
+        };
+
+    private static IReadOnlyList<string> DeserializeCreationGoals(string creationGoalsJson)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<IReadOnlyList<string>>(creationGoalsJson, JsonOptions) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
 
     private static string NormalizeEditorMode(string value)
     {

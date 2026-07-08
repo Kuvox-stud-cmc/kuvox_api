@@ -1,3 +1,4 @@
+using Kuvox.Api.Modules.Auth.Enums;
 using Kuvox.Api.Modules.Auth.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -44,6 +45,9 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
             entity.Property(u => u.ProductUpdatesEnabled).IsRequired();
             entity.Property(u => u.WeeklyDigestEnabled).IsRequired();
             entity.Property(u => u.DefaultEditorMode).HasMaxLength(16).IsRequired();
+            entity.Property(u => u.Personality).HasConversion<string>().HasMaxLength(32).HasDefaultValue(UserPersonality.Casual).IsRequired();
+            entity.Property(u => u.CreationGoalsJson).HasColumnType("jsonb").HasDefaultValueSql("'[]'::jsonb").IsRequired();
+            entity.Property(u => u.OnboardingCompletedAt);
         });
 
         modelBuilder.Entity<Studio>(entity =>

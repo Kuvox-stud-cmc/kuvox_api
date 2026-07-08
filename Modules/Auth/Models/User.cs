@@ -23,4 +23,10 @@ public sealed class User : BaseEntity
     public bool WeeklyDigestEnabled { get; set; } = false;
 
     public string DefaultEditorMode { get; set; } = "manual";
+
+    public UserPersonality Personality { get; set; } = UserPersonality.Casual;
+
+    public string CreationGoalsJson { get; set; } = "[]";
+
+    public DateTimeOffset? OnboardingCompletedAt { get; set; }
 }
