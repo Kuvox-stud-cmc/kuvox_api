@@ -155,8 +155,8 @@ if (app.Configuration.GetValue("Api:EnableDocs", true))
 // yields a fully schema'd database with no manual `dotnet ef` steps in any env.
 await app.MigrateModulesAsync();
 
-// Dev-only: seed a single pre-verified user so local work skips the SendGrid
-// email-verification round-trip. No-op outside Development.
+// Dev-only: seed a single pre-verified user so local work skips the email-verification
+// round-trip. No-op outside Development.
 await app.SeedDevUserAsync();
 
 app.UseHttpsRedirection();

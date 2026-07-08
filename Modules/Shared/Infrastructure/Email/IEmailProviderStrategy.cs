@@ -1,9 +1,10 @@
 namespace Kuvox.Api.Modules.Shared.Infrastructure.Email;
 
-/// <summary>
-/// Transactional email transport. Cross-module-safe: any module may depend on this abstraction.
-/// </summary>
-public interface IEmailSender
+internal interface IEmailProviderStrategy
 {
+    string Name { get; }
+
+    bool IsConfigured { get; }
+
     Task SendAsync(string toEmail, string subject, string htmlBody, CancellationToken cancellationToken = default);
 }

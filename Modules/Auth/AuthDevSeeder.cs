@@ -10,8 +10,8 @@ namespace Kuvox.Api.Modules.Auth;
 
 /// <summary>
 /// Development-only convenience: seeds a set of pre-verified users plus a sample studio with
-/// mixed-role memberships on startup, so local work doesn't need the SendGrid
-/// email-verification round-trip (which quickly burns the free-tier quota) and the studio /
+/// mixed-role memberships on startup, so local work doesn't need the email-verification
+/// round-trip (which quickly burns provider free-tier quota) and the studio /
 /// team features have realistic data to exercise. Fully idempotent and a hard no-op outside the
 /// Development environment, so it can never create backdoor accounts in staging/production.
 /// </summary>

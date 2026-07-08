@@ -1,7 +1,7 @@
 namespace Kuvox.Api.Modules.Shared.Infrastructure.Email;
 
 /// <summary>
-/// Dev fallback used when no SendGrid API key is configured. Logs the email (including any
+/// Dev fallback used when no provider API key is configured. Logs the email (including any
 /// verification/reset link in the body) at Information level so the full flow is testable
 /// locally without sending real mail. Mirrors the project's <c>StubLLMClient</c> philosophy.
 /// </summary>

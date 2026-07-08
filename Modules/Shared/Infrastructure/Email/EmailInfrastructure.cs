@@ -1,11 +1,8 @@
-using Microsoft.Extensions.Options;
-
 namespace Kuvox.Api.Modules.Shared.Infrastructure.Email;
 
 /// <summary>
-/// Registers email transport. Binds <see cref="EmailOptions"/> and chooses the sender at
-/// startup: <see cref="SendGridEmailSender"/> when an API key is present, otherwise the
-/// dev <see cref="LogEmailSender"/>. Cross-cutting infra, so it lives in Shared.
+/// Registers email transport. SendGrid is attempted first; Brevo is attempted as fallback.
+/// If no provider is configured, the dev log sender is used.
 /// </summary>
 public static class EmailInfrastructure
 {
@@ -13,17 +10,12 @@ public static class EmailInfrastructure
         this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<EmailOptions>(configuration.GetSection(EmailOptions.SectionName));
-
-        var options = configuration.GetSection(EmailOptions.SectionName).Get<EmailOptions>() ?? new EmailOptions();
-
-        if (string.IsNullOrWhiteSpace(options.ApiKey))
-        {
-            services.AddSingleton<IEmailSender, LogEmailSender>();
-        }
-        else
-        {
-            services.AddSingleton<IEmailSender, SendGridEmailSender>();
-        }
+        services.Configure<SendGridEmailOptions>(configuration.GetSection(SendGridEmailOptions.SectionName));
+        services.Configure<BrevoEmailOptions>(configuration.GetSection(BrevoEmailOptions.SectionName));
+        services.AddSingleton<LogEmailSender>();
+        services.AddSingleton<IEmailProviderStrategy, SendGridEmailProviderStrategy>();
+        services.AddSingleton<IEmailProviderStrategy, BrevoEmailProviderStrategy>();
+        services.AddSingleton<IEmailSender, FallbackEmailSender>();
 
         return services;
     }

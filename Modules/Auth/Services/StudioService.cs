@@ -562,11 +562,16 @@ internal sealed class StudioService(
         await emailSender.SendAsync(
             invitation.Email,
             $"You're invited to {studio.Name} on Kuvox",
-            $"""
-            <p>You have been invited to join {studio.Name} as {invitation.Role}.</p>
-            <p><a href="{inviteLink}">{inviteLink}</a></p>
-            <p>This invitation expires on {invitation.ExpiresAt:u}.</p>
-            """,
+            EmailTemplate.Action(
+                "Studio invitation",
+                $"You're invited to {studio.Name}",
+                [
+                    $"You have been invited to join {studio.Name} as {NormalizeRole(invitation.Role)} on Kuvox.",
+                    "Accept the invitation to access Studio projects, media, and shared workspace tools.",
+                ],
+                "Accept invitation",
+                inviteLink,
+                $"This invitation expires on {invitation.ExpiresAt:u}. If you were not expecting this invitation, you can ignore this email."),
             cancellationToken);
     }
 

@@ -302,12 +302,16 @@ internal sealed class AuthService(
         await emailSender.SendAsync(
             user.Email,
             "Reset your Kuvox password",
-            $"""
-            <p>Hi {user.DisplayName},</p>
-            <p>Click the link below to reset your password (valid for 1 hour):</p>
-            <p><a href="{resetLink}">{resetLink}</a></p>
-            <p>If you didn't request this, you can ignore this email.</p>
-            """,
+            EmailTemplate.Action(
+                "Password reset",
+                "Reset your password",
+                [
+                    $"Hi {user.DisplayName},",
+                    "Use this secure link to choose a new Kuvox password and get back to your workspace.",
+                ],
+                "Reset password",
+                resetLink,
+                "This link expires in 1 hour. If you did not request this, you can ignore this email."),
             cancellationToken);
     }
 
@@ -352,12 +356,16 @@ internal sealed class AuthService(
         await emailSender.SendAsync(
             user.Email,
             "Verify your Kuvox email",
-            $"""
-            <p>Hi {user.DisplayName},</p>
-            <p>Thanks for signing up! Click the link below to verify your email (valid for 24 hours):</p>
-            <p><a href="{verifyLink}">{verifyLink}</a></p>
-            <p>If you didn't create a Kuvox account, you can ignore this email.</p>
-            """,
+            EmailTemplate.Action(
+                "Account verification",
+                "Verify your email",
+                [
+                    $"Hi {user.DisplayName},",
+                    "Welcome to Kuvox. Confirm this address to activate your account and start editing.",
+                ],
+                "Verify email",
+                verifyLink,
+                "This link expires in 24 hours. If you did not create a Kuvox account, you can ignore this email."),
             cancellationToken);
     }
 

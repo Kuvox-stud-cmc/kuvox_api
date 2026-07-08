@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace Kuvox.Api.Tests;
+namespace Tests;
 
 public sealed class TimelineServiceTests
 {

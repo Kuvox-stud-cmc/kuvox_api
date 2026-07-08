@@ -8,13 +8,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="Kuvox.Api.Tests\**\*.cs" />
-    <Content Remove="Kuvox.Api.Tests\**\*" />
-    <None Remove="Kuvox.Api.Tests\**\*" />
+    <Compile Remove="Tests\**\*.cs" />
+    <Content Remove="Tests\**\*" />
+    <None Remove="Tests\**\*" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="AWSSDK.S3" Version="4.0.100" />
+    <PackageReference Include="brevo_csharp" Version="1.1.2" />
     <PackageReference Include="DotNetEnv" Version="3.2.0" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
     <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />

@@ -20,12 +20,12 @@ jobs:
       - name: Restore dependencies
         run: |
           dotnet restore api.csproj
-          dotnet restore Kuvox.Api.Tests/Kuvox.Api.Tests.csproj
+          dotnet restore Tests/Tests.csproj
 
       - name: Build
         run: |
           dotnet build api.csproj --no-restore --configuration Release
-          dotnet build Kuvox.Api.Tests/Kuvox.Api.Tests.csproj --no-restore --configuration Release
+          dotnet build Tests/Tests.csproj --no-restore --configuration Release
 
       - name: Test
-        run: dotnet test Kuvox.Api.Tests/Kuvox.Api.Tests.csproj --no-build --configuration Release --verbosity normal
+        run: dotnet test Tests/Tests.csproj --no-build --configuration Release --verbosity normal

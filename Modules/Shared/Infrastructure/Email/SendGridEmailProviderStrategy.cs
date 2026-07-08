@@ -5,20 +5,27 @@ using SendGrid.Helpers.Mail;
 namespace Kuvox.Api.Modules.Shared.Infrastructure.Email;
 
 /// <summary>
-/// Sends transactional email via SendGrid. Throws if SendGrid returns a non-2xx status so the
-/// caller (Auth flows) can surface a failure. Selected only when an API key is configured —
-/// otherwise <see cref="LogEmailSender"/> is registered instead.
+/// Primary transactional email provider. Throws provider-level failures so
+/// <see cref="FallbackEmailSender"/> can try the next configured provider.
 /// </summary>
-internal sealed class SendGridEmailSender(
+internal sealed class SendGridEmailProviderStrategy(
     IOptions<EmailOptions> options,
-    ILogger<SendGridEmailSender> logger) : IEmailSender
+    IOptions<SendGridEmailOptions> sendGridOptions,
+    ILogger<SendGridEmailProviderStrategy> logger) : IEmailProviderStrategy
 {
     private readonly EmailOptions _options = options.Value;
+    private readonly SendGridEmailOptions _sendGridOptions = sendGridOptions.Value;
+
+    public string Name => "SendGrid";
+
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(_sendGridOptions.ApiKey);
 
     public async Task SendAsync(
         string toEmail, string subject, string htmlBody, CancellationToken cancellationToken = default)
     {
-        var client = new SendGridClient(_options.ApiKey);
+        logger.LogDebug("Sending email from {FromEmail} named {FromName} via SendGrid to {ToEmail} with subject '{Subject}'.", _options.FromEmail, _options.FromName, toEmail, subject);
+
+        var client = new SendGridClient(_sendGridOptions.ApiKey);
         var message = MailHelper.CreateSingleEmail(
             new EmailAddress(_options.FromEmail, _options.FromName),
             new EmailAddress(toEmail),
@@ -37,6 +44,6 @@ internal sealed class SendGridEmailSender(
             throw new InvalidOperationException($"SendGrid send failed with status {response.StatusCode}.");
         }
 
-        logger.LogInformation("Sent '{Subject}' email to {ToEmail} via SendGrid.", subject, toEmail);
+        logger.LogDebug("SendGrid accepted '{Subject}' email to {ToEmail}.", subject, toEmail);
     }
 }
