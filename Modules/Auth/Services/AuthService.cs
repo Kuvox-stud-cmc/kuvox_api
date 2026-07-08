@@ -329,10 +329,21 @@ internal sealed class AuthService(
         var user = await users.GetByIdAsync(stored.UserId, cancellationToken)
             ?? throw AuthException.BadRequest("Invalid or expired reset token.");
 
+        var wasUnverified = user.EmailVerifiedAt is null;
+        if (wasUnverified)
+        {
+            user.EmailVerifiedAt = DateTimeOffset.UtcNow;
+        }
+
         user.PasswordHash = passwordHasher.HashPassword(user, newPassword);
         stored.UsedAt = DateTimeOffset.UtcNow;
 
         await users.SaveChangesAsync(cancellationToken);
+
+        if (wasUnverified)
+        {
+            await studioService.ClaimPendingInvitationsForUserAsync(user.Id, user.Email, cancellationToken);
+        }
 
         // Force re-login everywhere by revoking all existing refresh tokens.
         await users.RevokeAllRefreshTokensAsync(user.Id, cancellationToken);
