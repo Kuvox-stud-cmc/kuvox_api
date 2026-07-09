@@ -439,9 +439,7 @@ internal sealed class MediaService(
 
         item.StorageKey = canonical.ObjectKey;
         item.SizeBytes = canonical.SizeBytes;
-        item.Status = item.Kind == MediaKind.Video
-            ? MediaStatus.Processing
-            : MediaStatus.Ready;
+        item.Status = MediaStatus.Processing;
         item.ErrorMessage = null;
         item.Codec = completed.Codec;
         item.UpdatedAt = DateTimeOffset.UtcNow;
@@ -482,41 +480,38 @@ internal sealed class MediaService(
             }
         }
 
-        if (item.Kind == MediaKind.Video)
-        {
-            var ingestionEvent = new IngestionRequestedEvent(
-                EventId: Guid.NewGuid(),
-                EventType: "ingestion.requested",
-                OccurredAt: DateTimeOffset.UtcNow,
-                MediaId: item.Id,
-                OwnerId: item.OwnerId,
-                OwnerKind: item.OwnerKind,
-                Kind: item.Kind,
-                Canonical: canonical,
-                Proxy: completed.Proxy,
-                Thumbnail: completed.Thumbnail,
-                DurationSeconds: completed.DurationSeconds,
-                Width: completed.Width,
-                Height: completed.Height,
-                FrameRate: completed.FrameRate,
-                Codec: completed.Codec
-            );
+        var ingestionEvent = new IngestionRequestedEvent(
+            EventId: Guid.NewGuid(),
+            EventType: "ingestion.requested",
+            OccurredAt: DateTimeOffset.UtcNow,
+            MediaId: item.Id,
+            OwnerId: item.OwnerId,
+            OwnerKind: item.OwnerKind,
+            Kind: item.Kind,
+            Canonical: canonical,
+            Proxy: completed.Proxy,
+            Thumbnail: completed.Thumbnail,
+            DurationSeconds: completed.DurationSeconds,
+            Width: completed.Width,
+            Height: completed.Height,
+            FrameRate: completed.FrameRate,
+            Codec: completed.Codec
+        );
 
-            await media.EnqueueOutboxAsync(
-                OutboxMessage.Create(
-                    dedupeKey: $"ingestion.requested:{item.Id}",
-                    exchange: rabbitMqOptions.Value.ExchangeName,
-                    routingKey: "ingestion.requested",
-                    eventType: ingestionEvent.EventType,
-                    payload: ingestionEvent),
-                cancellationToken);
-        }
+        await media.EnqueueOutboxAsync(
+            OutboxMessage.Create(
+                dedupeKey: $"ingestion.requested:{item.Id}",
+                exchange: rabbitMqOptions.Value.ExchangeName,
+                routingKey: "ingestion.requested",
+                eventType: ingestionEvent.EventType,
+                payload: ingestionEvent),
+            cancellationToken);
 
         await media.SaveChangesAsync(cancellationToken);
         await realtime.MediaUpdatedAsync(
             item,
             ToDto(item),
-            item.Kind == MediaKind.Video ? "processing" : "ready",
+            "processing",
             cancellationToken);
     }
 
@@ -574,7 +569,11 @@ internal sealed class MediaService(
             ToDto(item),
             "ready",
             cancellationToken,
-            shotCount: completed.ShotCount);
+            shotCount: completed.ShotCount,
+            visualCount: completed.VisualCount,
+            audioCount: completed.AudioCount,
+            transcriptCount: completed.TranscriptCount,
+            ocrCount: completed.OcrCount);
     }
 
     public async Task HandleIngestionFailedAsync(

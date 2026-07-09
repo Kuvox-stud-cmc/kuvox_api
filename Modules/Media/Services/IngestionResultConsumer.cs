@@ -244,7 +244,11 @@ internal sealed class IngestionResultConsumer(
                 && completed.EventId != Guid.Empty
                 && completed.SourceEventId != Guid.Empty
                 && completed.MediaId != Guid.Empty
-                && completed.ShotCount >= 0,
+                && completed.ShotCount >= 0
+                && completed.VisualCount is null or >= 0
+                && completed.AudioCount is null or >= 0
+                && completed.TranscriptCount is null or >= 0
+                && completed.OcrCount is null or >= 0,
             IngestionFailedEvent failed =>
                 failed.EventType == expectedEventType
                 && failed.EventId != Guid.Empty

@@ -11,6 +11,10 @@ internal interface IMediaRealtimeNotifier
         string phase,
         CancellationToken cancellationToken = default,
         int? shotCount = null,
+        int? visualCount = null,
+        int? audioCount = null,
+        int? transcriptCount = null,
+        int? ocrCount = null,
         string? errorCode = null,
         string? errorMessage = null);
 }

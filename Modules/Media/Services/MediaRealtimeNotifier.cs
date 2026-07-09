@@ -20,6 +20,10 @@ internal sealed class MediaRealtimeNotifier(
         string phase,
         CancellationToken cancellationToken = default,
         int? shotCount = null,
+        int? visualCount = null,
+        int? audioCount = null,
+        int? transcriptCount = null,
+        int? ocrCount = null,
         string? errorCode = null,
         string? errorMessage = null)
     {
@@ -39,6 +43,10 @@ internal sealed class MediaRealtimeNotifier(
                         DateTimeOffset.UtcNow,
                         dto.Pipeline,
                         shotCount,
+                        visualCount,
+                        audioCount,
+                        transcriptCount,
+                        ocrCount,
                         errorCode,
                         errorMessage),
                     cancellationToken);

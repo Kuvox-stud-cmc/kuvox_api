@@ -8,5 +8,9 @@ internal sealed record MediaRealtimeUpdate(
     DateTimeOffset OccurredAt,
     MediaPipelineDto Pipeline,
     int? ShotCount = null,
+    int? VisualCount = null,
+    int? AudioCount = null,
+    int? TranscriptCount = null,
+    int? OcrCount = null,
     string? ErrorCode = null,
     string? ErrorMessage = null);

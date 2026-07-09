@@ -103,11 +103,7 @@ internal sealed class MediaPipelineRecoveryService(
             if (HasStorageObject(item.CanonicalBucketName, item.CanonicalStorageKey))
             {
                 item.Status = MediaStatus.Processing;
-                if (item.Kind == MediaKind.Video)
-                {
-                    realtimeUpdates.Add((item, "processing", null, null));
-                }
-
+                realtimeUpdates.Add((item, "processing", null, null));
                 await RecoverProcessingAsync(repository, rabbitMqOptions, item, now, realtimeUpdates, cancellationToken);
                 return;
             }
@@ -169,15 +165,6 @@ internal sealed class MediaPipelineRecoveryService(
             item.SizeBytes = canonicalSizeBytes;
         }
 
-        if (item.Kind != MediaKind.Video)
-        {
-            item.Status = MediaStatus.Ready;
-            item.ErrorMessage = null;
-            item.UpdatedAt = now;
-            realtimeUpdates.Add((item, "ready", null, null));
-            return;
-        }
-
         var canonical = OptimizedObjectFrom(item.CanonicalBucketName, item.CanonicalStorageKey, item.CanonicalSizeBytes ?? item.SizeBytes, item.Kind)!;
         var requested = new IngestionRequestedEvent(
             EventId: Guid.NewGuid(),
@@ -190,9 +177,24 @@ internal sealed class MediaPipelineRecoveryService(
             Canonical: canonical,
             Proxy: OptimizedObjectFrom(item.ProxyBucketName, item.ProxyStorageKey, item.ProxySizeBytes, item.Kind),
             Thumbnail: OptimizedObjectFrom(item.ThumbnailBucketName, item.ThumbnailStorageKey, item.ThumbnailSizeBytes, MediaKind.Image),
-            DurationSeconds: item is Models.Video video ? video.DurationSeconds : null,
-            Width: item is Models.Video widthSource ? widthSource.Width : null,
-            Height: item is Models.Video heightSource ? heightSource.Height : null,
+            DurationSeconds: item switch
+            {
+                Models.Video video => video.DurationSeconds,
+                Models.Audio audio => audio.DurationSeconds,
+                _ => null
+            },
+            Width: item switch
+            {
+                Models.Video video => video.Width,
+                Models.Photo photo => photo.Width,
+                _ => null
+            },
+            Height: item switch
+            {
+                Models.Video video => video.Height,
+                Models.Photo photo => photo.Height,
+                _ => null
+            },
             FrameRate: item is Models.Video frameRateSource ? frameRateSource.FrameRate : null,
             Codec: item.Codec);
 
