@@ -23,6 +23,8 @@ public interface ITimelineService
     /// <summary>Persists a queued render job for the latest synced timeline revision.</summary>
     Task<RenderJobDto> RequestRenderAsync(Guid timelineId, CallerContext caller, RenderTimelineRequest request, CancellationToken cancellationToken = default);
 
+    Task<RenderJobDto> GetRenderJobAsync(Guid renderJobId, CallerContext caller, CancellationToken cancellationToken = default);
+
     /// <summary>Validates and logs client-side video editor performance metrics.</summary>
     Task RecordPerformanceAsync(Guid projectId, CallerContext caller, RecordVideoEditorPerformanceRequest request, CancellationToken cancellationToken = default);
 }

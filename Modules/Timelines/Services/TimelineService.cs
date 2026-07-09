@@ -1,18 +1,36 @@
 using System.Text.Json;
+using Kuvox.Api.Modules.Media.Contracts;
+using Kuvox.Api.Modules.Media.Services;
 using Kuvox.Api.Modules.Projects.Contracts;
 using Kuvox.Api.Modules.Shared.Infrastructure;
+using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
+using Kuvox.Api.Modules.Shared.Infrastructure.RabbitMQ;
+using Kuvox.Api.Modules.Timelines.Contracts;
 using Kuvox.Api.Modules.Timelines.Dtos;
 using Kuvox.Api.Modules.Timelines.Enums;
 using Kuvox.Api.Modules.Timelines.Models;
 using Kuvox.Api.Modules.Timelines.Repositories;
+using Microsoft.Extensions.Options;
 
 namespace Kuvox.Api.Modules.Timelines.Services;
 
-internal sealed class TimelineService(ITimelineRepository timelines, IProjectsApi projects, ILogger<TimelineService> logger) : ITimelineService
+internal sealed class TimelineService(
+    ITimelineRepository timelines,
+    IProjectsApi projects,
+    IMediaApi media,
+    IOptions<RabbitMqOptions> rabbitMqOptions,
+    IOptions<StorageOptions> storageOptions,
+    ILogger<TimelineService> logger) : ITimelineService
 {
     private readonly ITimelineRepository _timelines = timelines;
     private readonly IProjectsApi _projects = projects;
+    private readonly IMediaApi _media = media;
+    private readonly RabbitMqOptions _rabbitMqOptions = rabbitMqOptions.Value;
+    private readonly StorageOptions _storageOptions = storageOptions.Value;
     private readonly ILogger<TimelineService> _logger = logger;
+
+    private const string RenderingRequestedEventType = "rendering.requested";
+    private const string RenderingRequestedRoutingKey = "kuvox.rendering";
 
     private static readonly HashSet<string> SupportedRenderFormats = new(StringComparer.Ordinal)
     {
@@ -187,6 +205,12 @@ internal sealed class TimelineService(ITimelineRepository timelines, IProjectsAp
             ?? throw DomainException.NotFound("Timeline revision not found.");
 
         var now = DateTimeOffset.UtcNow;
+        var mediaSources = await ResolveReferencedMediaAsync(revision.DocumentJson, caller, cancellationToken);
+        var format = request.Settings.GetProperty("format").GetString() ?? "mp4";
+        var outputContentType = format == "mov"
+            ? "video/quicktime"
+            : "video/mp4";
+        var outputBucketName = _storageOptions.RawBucketName;
         var renderJob = new RenderJob
         {
             TimelineId = timeline.Id,
@@ -194,11 +218,40 @@ internal sealed class TimelineService(ITimelineRepository timelines, IProjectsAp
             RequestedByUserId = caller.UserId,
             SettingsJson = request.Settings.GetRawText(),
             Status = RenderStatus.Queued,
+            OutputBucketName = outputBucketName,
+            OutputContentType = outputContentType,
             CreatedAt = now,
             UpdatedAt = now,
         };
+        renderJob.OutputStorageKey = $"renders/timelines/{timeline.Id}/jobs/{renderJob.Id}.{format}";
+
+        using var document = JsonDocument.Parse(revision.DocumentJson);
+        var requested = new RenderingRequestedEvent(
+            Guid.CreateVersion7(),
+            RenderingRequestedEventType,
+            now,
+            renderJob.Id,
+            timeline.Id,
+            timeline.ProjectId,
+            revision.Id,
+            revision.RevisionNumber,
+            caller.UserId,
+            request.Settings.Clone(),
+            document.RootElement.Clone(),
+            mediaSources,
+            outputBucketName,
+            renderJob.OutputStorageKey,
+            outputContentType);
 
         await _timelines.AddRenderJobAsync(renderJob, cancellationToken);
+        await _timelines.EnqueueOutboxAsync(
+            OutboxMessage.Create(
+                $"rendering.requested:{renderJob.Id}",
+                _rabbitMqOptions.ExchangeName,
+                RenderingRequestedRoutingKey,
+                RenderingRequestedEventType,
+                requested),
+            cancellationToken);
         await _timelines.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -210,6 +263,22 @@ internal sealed class TimelineService(ITimelineRepository timelines, IProjectsAp
             renderJob.Id);
 
         return ToRenderJobDto(renderJob, revision.RevisionNumber);
+    }
+
+    public async Task<RenderJobDto> GetRenderJobAsync(
+        Guid renderJobId,
+        CallerContext caller,
+        CancellationToken cancellationToken = default)
+    {
+        var renderJob = await _timelines.GetRenderJobByIdAsync(renderJobId, cancellationToken)
+            ?? throw DomainException.NotFound("Render job not found.");
+        var timeline = await _timelines.GetByIdAsync(renderJob.TimelineId, cancellationToken)
+            ?? throw DomainException.NotFound("Video timeline not found.");
+        await _projects.RequireReadAccessAsync(timeline.ProjectId, caller, cancellationToken);
+        var revision = renderJob.RevisionId is null
+            ? null
+            : await _timelines.GetRevisionByIdAsync(renderJob.RevisionId.Value, cancellationToken);
+        return ToRenderJobDto(renderJob, revision?.RevisionNumber);
     }
 
     public async Task RecordPerformanceAsync(
@@ -268,10 +337,126 @@ internal sealed class TimelineService(ITimelineRepository timelines, IProjectsAp
             renderJob.RevisionId,
             revisionNumber,
             renderJob.Status.ToString().ToLowerInvariant(),
+            renderJob.OutputBucketName,
             renderJob.OutputStorageKey,
+            renderJob.OutputContentType,
+            renderJob.OutputSizeBytes,
             null,
+            renderJob.ErrorCode,
+            renderJob.ErrorMessage,
+            renderJob.StartedAt,
+            renderJob.FinishedAt,
             renderJob.CreatedAt,
             renderJob.UpdatedAt);
+
+    private async Task<IReadOnlyList<RenderingMediaSource>> ResolveReferencedMediaAsync(
+        string documentJson,
+        CallerContext caller,
+        CancellationToken cancellationToken)
+    {
+        using var document = JsonDocument.Parse(documentJson);
+        var mediaIds = ExtractReferencedMediaIds(document.RootElement);
+        if (mediaIds.Count == 0)
+        {
+            return [];
+        }
+
+        var resolutions = await _media.ResolveAsync(mediaIds, caller, cancellationToken);
+        var sources = new List<RenderingMediaSource>(resolutions.Count);
+        foreach (var resolution in resolutions)
+        {
+            if (resolution.Availability != MediaResolutionAvailability.Available || resolution.Media is null)
+            {
+                throw DomainException.BadRequest("Render request contains media that is missing, inaccessible, deleted, failed, or still processing.");
+            }
+
+            var sourceKey = resolution.Media.CanonicalStorageKey
+                ?? resolution.Media.ProxyStorageKey
+                ?? resolution.Media.StorageKey;
+            if (string.IsNullOrWhiteSpace(sourceKey))
+            {
+                throw DomainException.BadRequest("Render request contains media without a usable storage object.");
+            }
+
+            sources.Add(new RenderingMediaSource(
+                resolution.MediaId,
+                resolution.Media.Kind.ToString(),
+                null,
+                sourceKey,
+                null,
+                resolution.Media.SizeBytes,
+                resolution.Media.DurationSeconds,
+                resolution.Media.Width,
+                resolution.Media.Height,
+                resolution.Media.FrameRate,
+                resolution.Media.Codec));
+        }
+
+        return sources;
+    }
+
+    private static IReadOnlyCollection<Guid> ExtractReferencedMediaIds(JsonElement document)
+    {
+        if (document.ValueKind != JsonValueKind.Object)
+        {
+            throw DomainException.BadRequest("Timeline document is not exportable.");
+        }
+
+        var documentMediaIds = new HashSet<string>(StringComparer.Ordinal);
+        if (document.TryGetProperty("media", out var media) && media.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var item in media.EnumerateObject())
+            {
+                documentMediaIds.Add(item.Name);
+            }
+        }
+
+        var referenced = new HashSet<Guid>();
+        if (!document.TryGetProperty("tracks", out var tracks) || tracks.ValueKind != JsonValueKind.Array)
+        {
+            return referenced;
+        }
+
+        foreach (var track in tracks.EnumerateArray())
+        {
+            if (track.ValueKind != JsonValueKind.Object
+                || !track.TryGetProperty("items", out var items)
+                || items.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            foreach (var item in items.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object
+                    || !item.TryGetProperty("mediaId", out var mediaIdElement)
+                    || mediaIdElement.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                var mediaId = mediaIdElement.GetString();
+                if (string.IsNullOrWhiteSpace(mediaId))
+                {
+                    throw DomainException.BadRequest("Timeline item mediaId must be a non-empty string.");
+                }
+
+                if (!documentMediaIds.Contains(mediaId))
+                {
+                    throw DomainException.BadRequest("Timeline item references media that is missing from the saved document.");
+                }
+
+                if (!Guid.TryParse(mediaId, out var parsedMediaId))
+                {
+                    throw DomainException.BadRequest("Timeline item mediaId must be a valid media id.");
+                }
+
+                referenced.Add(parsedMediaId);
+            }
+        }
+
+        return referenced;
+    }
 
     private static void ValidateSaveRequest(Guid projectId, SaveTimelineDocumentRequest request)
     {

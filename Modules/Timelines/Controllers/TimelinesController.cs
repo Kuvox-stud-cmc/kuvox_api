@@ -39,6 +39,10 @@ public sealed class TimelinesController(ITimelineService timelines) : Controller
     public Task<RenderJobDto> RequestRender(Guid id, RenderTimelineRequest request, CancellationToken ct) =>
         timelines.RequestRenderAsync(id, Caller(), request, ct);
 
+    [HttpGet("render-jobs/{jobId:guid}")]
+    public Task<RenderJobDto> GetRenderJob(Guid jobId, CancellationToken ct) =>
+        timelines.GetRenderJobAsync(jobId, Caller(), ct);
+
     [HttpPost("projects/{projectId:guid}/performance")]
     public async Task<IActionResult> RecordPerformance(Guid projectId, RecordVideoEditorPerformanceRequest request, CancellationToken ct)
     {

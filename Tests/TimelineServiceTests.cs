@@ -1,6 +1,12 @@
 using System.Text.Json;
+using Kuvox.Api.Modules.Media.Contracts;
+using Kuvox.Api.Modules.Media.Enums;
+using Kuvox.Api.Modules.Media.Services;
 using Kuvox.Api.Modules.Projects.Contracts;
 using Kuvox.Api.Modules.Shared.Infrastructure;
+using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
+using Kuvox.Api.Modules.Shared.Infrastructure.RabbitMQ;
+using Kuvox.Api.Modules.Timelines.Contracts;
 using Kuvox.Api.Modules.Timelines.Dtos;
 using Kuvox.Api.Modules.Timelines.Enums;
 using Kuvox.Api.Modules.Timelines.Models;
@@ -8,6 +14,7 @@ using Kuvox.Api.Modules.Timelines.Repositories;
 using Kuvox.Api.Modules.Timelines.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Tests;
@@ -86,6 +93,102 @@ public sealed class TimelineServiceTests
         Assert.Equal(3, result.RevisionNumber);
         Assert.Single(repository.RenderJobs);
         Assert.Equal(RenderStatus.Queued, repository.RenderJobs[0].Status);
+        Assert.Single(repository.OutboxMessages);
+        Assert.Equal("kuvox.rendering", repository.OutboxMessages[0].RoutingKey);
+        Assert.Equal("rendering.requested", repository.OutboxMessages[0].EventType);
+    }
+
+    [Fact]
+    public async Task RequestRenderAsync_rejects_unready_media()
+    {
+        var mediaId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        var repository = new FakeTimelineRepository();
+        var timeline = repository.AddTimeline(ProjectId);
+        repository.AddRevision(timeline.Id, 1, DocumentWithMedia(ProjectId, mediaId));
+        var media = new FakeMediaApi
+        {
+            Resolutions =
+            [
+                new MediaResolution(mediaId, MediaKind.Video, MediaResolutionAvailability.Processing, null),
+            ],
+        };
+        var service = CreateService(repository, media: media);
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() =>
+            service.RequestRenderAsync(
+                timeline.Id,
+                Caller,
+                new RenderTimelineRequest(timeline.Id, 1, Json("""{"format":"mp4","width":1920,"height":1080,"frameRate":30,"quality":"standard"}"""))));
+
+        Assert.Equal(StatusCodes.Status400BadRequest, ex.StatusCode);
+        Assert.Empty(repository.RenderJobs);
+        Assert.Empty(repository.OutboxMessages);
+    }
+
+    [Fact]
+    public async Task Rendering_result_events_update_job_idempotently()
+    {
+        var repository = new FakeTimelineRepository();
+        var timeline = repository.AddTimeline(ProjectId);
+        var revision = repository.AddRevision(timeline.Id, 2);
+        var job = new RenderJob
+        {
+            TimelineId = timeline.Id,
+            RevisionId = revision.Id,
+            RequestedByUserId = UserId,
+            Status = RenderStatus.Queued,
+        };
+        repository.RenderJobs.Add(job);
+        var sourceEventId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+
+        await RenderingResultConsumer.ApplyStartedAsync(
+            repository,
+            new RenderingStartedEvent(
+                Guid.CreateVersion7(),
+                "rendering.started",
+                DateTimeOffset.UtcNow,
+                sourceEventId,
+                job.Id,
+                DateTimeOffset.UtcNow),
+            CancellationToken.None);
+
+        Assert.Equal(RenderStatus.Rendering, job.Status);
+        Assert.NotNull(job.StartedAt);
+
+        await RenderingResultConsumer.ApplyCompletedAsync(
+            repository,
+            new RenderingCompletedEvent(
+                Guid.CreateVersion7(),
+                "rendering.completed",
+                DateTimeOffset.UtcNow,
+                sourceEventId,
+                job.Id,
+                "kuvox-renders",
+                "renders/job.mp4",
+                "video/mp4",
+                456,
+                DateTimeOffset.UtcNow),
+            CancellationToken.None);
+
+        Assert.Equal(RenderStatus.Completed, job.Status);
+        Assert.Equal("renders/job.mp4", job.OutputStorageKey);
+        Assert.Equal(456, job.OutputSizeBytes);
+
+        await RenderingResultConsumer.ApplyFailedAsync(
+            repository,
+            new RenderingFailedEvent(
+                Guid.CreateVersion7(),
+                "rendering.failed",
+                DateTimeOffset.UtcNow,
+                sourceEventId,
+                job.Id,
+                "LateFailure",
+                "late failure",
+                DateTimeOffset.UtcNow),
+            CancellationToken.None);
+
+        Assert.Equal(RenderStatus.Completed, job.Status);
+        Assert.Null(job.ErrorCode);
     }
 
     [Fact]
@@ -159,8 +262,17 @@ public sealed class TimelineServiceTests
         Assert.Equal(StatusCodes.Status400BadRequest, ex.StatusCode);
     }
 
-    private static TimelineService CreateService(FakeTimelineRepository repository, FakeProjectsApi? projects = null) =>
-        new(repository, projects ?? new FakeProjectsApi(), NullLogger<TimelineService>.Instance);
+    private static TimelineService CreateService(
+        FakeTimelineRepository repository,
+        FakeProjectsApi? projects = null,
+        FakeMediaApi? media = null) =>
+        new(
+            repository,
+            projects ?? new FakeProjectsApi(),
+            media ?? new FakeMediaApi(),
+            Options.Create(new RabbitMqOptions { ExchangeName = "kuvox.events" }),
+            Options.Create(new StorageOptions { RawBucketName = "kuvox-renders" }),
+            NullLogger<TimelineService>.Instance);
 
     private static SaveTimelineDocumentRequest SaveRequest(Guid projectId, int baseRevisionNumber, string operationsJson = "[]") =>
         new(
@@ -203,6 +315,65 @@ public sealed class TimelineServiceTests
             },
         });
 
+    private static string DocumentWithMedia(Guid projectId, Guid mediaId) =>
+        JsonSerializer.Serialize(new
+        {
+            schemaVersion = 1,
+            projectId = projectId.ToString(),
+            name = "Test",
+            createdAt = "2026-01-01T00:00:00.000Z",
+            updatedAt = "2026-01-01T00:00:00.000Z",
+            settings = new
+            {
+                width = 1920,
+                height = 1080,
+                aspectRatio = "16:9",
+                frameRate = 30,
+                previewQuality = "balanced",
+                defaultTransitionDuration = 0.4,
+                exportPreset = "h264-1080p",
+            },
+            media = new Dictionary<string, object>
+            {
+                [mediaId.ToString()] = new
+                {
+                    id = mediaId.ToString(),
+                    kind = "video",
+                    name = "clip.mp4",
+                    duration = 10,
+                },
+            },
+            tracks = new[]
+            {
+                new
+                {
+                    id = "v1",
+                    kind = "video",
+                    items = new[]
+                    {
+                        new
+                        {
+                            id = "item-1",
+                            type = "video",
+                            mediaId = mediaId.ToString(),
+                            timelineStart = 0,
+                            duration = 5,
+                            sourceIn = 0,
+                            sourceOut = 5,
+                        },
+                    },
+                },
+            },
+            transitions = Array.Empty<object>(),
+            effects = Array.Empty<object>(),
+            history = new
+            {
+                revision = 1,
+                canUndo = false,
+                canRedo = false,
+            },
+        });
+
     private sealed class FakeProjectsApi : IProjectsApi
     {
         public ProjectDocumentAccess ReadAccess { get; init; } = new(ProjectId, ProjectContentKind.Video, "Video Project", DateTimeOffset.UtcNow);
@@ -218,11 +389,50 @@ public sealed class TimelineServiceTests
             WriteException is not null ? Task.FromException<ProjectDocumentAccess>(WriteException) : Task.FromResult(WriteAccess);
     }
 
+    private sealed class FakeMediaApi : IMediaApi
+    {
+        public IReadOnlyList<MediaResolution> Resolutions { get; init; } = [];
+
+        public Task<MediaSummary?> GetSummaryAsync(Guid mediaId, CancellationToken cancellationToken = default) => Task.FromResult<MediaSummary?>(null);
+
+        public Task<IReadOnlyList<MediaResolution>> ResolveAsync(
+            IReadOnlyCollection<Guid> mediaIds,
+            CallerContext caller,
+            CancellationToken cancellationToken = default)
+        {
+            if (Resolutions.Count > 0)
+            {
+                return Task.FromResult(Resolutions);
+            }
+
+            return Task.FromResult<IReadOnlyList<MediaResolution>>(mediaIds
+                .Select(mediaId => new MediaResolution(
+                    mediaId,
+                    MediaKind.Video,
+                    MediaResolutionAvailability.Available,
+                    new MediaSummary(
+                        mediaId,
+                        ProjectId,
+                        OwnerKind.User,
+                        MediaKind.Video,
+                        "clip.mp4",
+                        "Ready",
+                        CanonicalStorageKey: $"media/{mediaId}/canonical.mp4",
+                        SizeBytes: 123,
+                        DurationSeconds: 10)))
+                .ToList());
+        }
+
+        public Task<MediaWorkspaceUsageSummary> GetWorkspaceUsageAsync(Guid ownerId, OwnerKind ownerKind, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new MediaWorkspaceUsageSummary(0, 0));
+    }
+
     private sealed class FakeTimelineRepository : ITimelineRepository
     {
         public List<Timeline> Timelines { get; } = [];
         public List<TimelineRevision> Revisions { get; } = [];
         public List<RenderJob> RenderJobs { get; } = [];
+        public List<OutboxMessage> OutboxMessages { get; } = [];
         public bool SaveChangesCalled { get; private set; }
 
         public Timeline AddTimeline(Guid projectId)
@@ -232,13 +442,13 @@ public sealed class TimelineServiceTests
             return timeline;
         }
 
-        public TimelineRevision AddRevision(Guid timelineId, int revisionNumber)
+        public TimelineRevision AddRevision(Guid timelineId, int revisionNumber, string? documentJson = null)
         {
             var revision = new TimelineRevision
             {
                 TimelineId = timelineId,
                 RevisionNumber = revisionNumber,
-                DocumentJson = DocumentJson(ProjectId, revisionNumber),
+                DocumentJson = documentJson ?? DocumentJson(ProjectId, revisionNumber),
                 DocumentSchemaVersion = 1,
                 OperationsJson = "[]",
                 CreatedByUserId = UserId,
@@ -253,9 +463,12 @@ public sealed class TimelineServiceTests
         public Task<int> CountByProjectAsync(Guid projectId, CancellationToken cancellationToken = default) => Task.FromResult(Timelines.Count(t => t.ProjectId == projectId));
         public Task<TimelineRevision?> GetLatestRevisionAsync(Guid timelineId, CancellationToken cancellationToken = default) => Task.FromResult(Revisions.Where(r => r.TimelineId == timelineId).OrderByDescending(r => r.RevisionNumber).FirstOrDefault());
         public Task<TimelineRevision?> GetRevisionByNumberAsync(Guid timelineId, int revisionNumber, CancellationToken cancellationToken = default) => Task.FromResult(Revisions.FirstOrDefault(r => r.TimelineId == timelineId && r.RevisionNumber == revisionNumber));
+        public Task<TimelineRevision?> GetRevisionByIdAsync(Guid revisionId, CancellationToken cancellationToken = default) => Task.FromResult(Revisions.FirstOrDefault(r => r.Id == revisionId));
+        public Task<RenderJob?> GetRenderJobByIdAsync(Guid renderJobId, CancellationToken cancellationToken = default) => Task.FromResult(RenderJobs.FirstOrDefault(j => j.Id == renderJobId));
         public Task AddAsync(Timeline timeline, CancellationToken cancellationToken = default) { Timelines.Add(timeline); return Task.CompletedTask; }
         public Task AddRevisionAsync(TimelineRevision revision, CancellationToken cancellationToken = default) { Revisions.Add(revision); return Task.CompletedTask; }
         public Task AddRenderJobAsync(RenderJob renderJob, CancellationToken cancellationToken = default) { RenderJobs.Add(renderJob); return Task.CompletedTask; }
+        public Task EnqueueOutboxAsync(OutboxMessage message, CancellationToken cancellationToken = default) { OutboxMessages.Add(message); return Task.CompletedTask; }
         public Task SaveChangesAsync(CancellationToken cancellationToken = default) { SaveChangesCalled = true; return Task.CompletedTask; }
     }
 }

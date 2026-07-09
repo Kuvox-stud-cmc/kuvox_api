@@ -1,3 +1,4 @@
+using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
 using Kuvox.Api.Modules.Timelines.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,6 +16,7 @@ public sealed class TimelinesDbContext(DbContextOptions<TimelinesDbContext> opti
     public DbSet<TimelineRevision> TimelineRevisions => Set<TimelineRevision>();
     public DbSet<RenderJob> RenderJobs => Set<RenderJob>();
     public DbSet<CommandHistory> CommandHistory => Set<CommandHistory>();
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -50,6 +52,10 @@ public sealed class TimelinesDbContext(DbContextOptions<TimelinesDbContext> opti
             entity.Property(j => j.SettingsJson).HasColumnType("jsonb").IsRequired();
             entity.Property(j => j.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(j => j.OutputStorageKey).HasMaxLength(1024);
+            entity.Property(j => j.OutputBucketName).HasMaxLength(256);
+            entity.Property(j => j.OutputContentType).HasMaxLength(128);
+            entity.Property(j => j.ErrorCode).HasMaxLength(128);
+            entity.Property(j => j.ErrorMessage).HasMaxLength(2048);
             entity.HasIndex(j => j.TimelineId);
             entity.HasIndex(j => j.RevisionId);
         });
@@ -63,6 +69,28 @@ public sealed class TimelinesDbContext(DbContextOptions<TimelinesDbContext> opti
             entity.HasIndex(c => c.ProjectId);
         });
 
+        ConfigureOutbox(modelBuilder);
+
         base.OnModelCreating(modelBuilder);
+    }
+
+    private static void ConfigureOutbox(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<OutboxMessage>(entity =>
+        {
+            entity.ToTable("outbox_messages", "shared", table => table.ExcludeFromMigrations());
+            entity.HasKey(message => message.Id);
+            entity.Property(message => message.DedupeKey).HasMaxLength(256).IsRequired();
+            entity.Property(message => message.Transport).HasMaxLength(32).IsRequired();
+            entity.Property(message => message.Exchange).HasMaxLength(256).IsRequired();
+            entity.Property(message => message.RoutingKey).HasMaxLength(256).IsRequired();
+            entity.Property(message => message.EventType).HasMaxLength(256).IsRequired();
+            entity.Property(message => message.PayloadJson).HasColumnType("jsonb").IsRequired();
+            entity.Property(message => message.HeadersJson).HasColumnType("jsonb").IsRequired();
+            entity.Property(message => message.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+            entity.Property(message => message.LastError).HasMaxLength(2048);
+            entity.HasIndex(message => message.DedupeKey).IsUnique();
+            entity.HasIndex(message => new { message.Status, message.NextAttemptAt });
+        });
     }
 }

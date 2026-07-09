@@ -66,6 +66,28 @@ namespace Kuvox.Api.Modules.Timelines.Repositories.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("OutputBucketName")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("OutputContentType")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<long?>("OutputSizeBytes")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("OutputStorageKey")
                         .HasMaxLength(1024)
                         .HasColumnType("character varying(1024)");
@@ -84,6 +106,9 @@ namespace Kuvox.Api.Modules.Timelines.Repositories.Migrations
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
+
+                    b.Property<DateTimeOffset?>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("TimelineId")
                         .HasColumnType("uuid");

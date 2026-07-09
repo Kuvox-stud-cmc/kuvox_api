@@ -22,4 +22,18 @@ public sealed class RenderJob : BaseEntity
 
     /// <summary>Object-storage key of the rendered output once completed.</summary>
     public string? OutputStorageKey { get; set; }
+
+    public string? OutputBucketName { get; set; }
+
+    public string? OutputContentType { get; set; }
+
+    public long? OutputSizeBytes { get; set; }
+
+    public string? ErrorCode { get; set; }
+
+    public string? ErrorMessage { get; set; }
+
+    public DateTimeOffset? StartedAt { get; set; }
+
+    public DateTimeOffset? FinishedAt { get; set; }
 }

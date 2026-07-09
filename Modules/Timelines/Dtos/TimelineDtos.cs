@@ -22,8 +22,15 @@ public sealed record RenderJobDto(
     Guid? RevisionId,
     int? RevisionNumber,
     string Status,
+    string? OutputBucketName,
     string? OutputStorageKey,
+    string? OutputContentType,
+    long? OutputSizeBytes,
     string? OutputUrl,
+    string? ErrorCode,
+    string? ErrorMessage,
+    DateTimeOffset? StartedAt,
+    DateTimeOffset? FinishedAt,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
