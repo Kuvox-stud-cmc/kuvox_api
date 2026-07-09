@@ -65,6 +65,32 @@ public static class AuthModule
                         Encoding.UTF8.GetBytes(jwtOptions.Secret)),
                     ClockSkew = TimeSpan.FromSeconds(30),
                 };
+                options.Events = new JwtBearerEvents
+                {
+                    OnTokenValidated = async context =>
+                    {
+                        var principal = context.Principal;
+                        var userId = principal?.GetUserId();
+                        var sessionClaim = principal?.FindFirst(TokenService.SessionClaimType)?.Value;
+
+                        if (userId is null || !Guid.TryParse(sessionClaim, out var sessionId))
+                        {
+                            context.Fail("Invalid session.");
+                            return;
+                        }
+
+                        var users = context.HttpContext.RequestServices.GetRequiredService<IUserRepository>();
+                        var isActive = await users.IsActiveSessionAsync(
+                            userId.Value,
+                            sessionId,
+                            context.HttpContext.RequestAborted);
+
+                        if (!isActive)
+                        {
+                            context.Fail("Session is no longer active.");
+                        }
+                    },
+                };
             });
 
         services.AddAuthorizationBuilder()

@@ -24,7 +24,25 @@ internal interface IUserRepository
 
     Task<RefreshToken?> GetRefreshTokenByHashAsync(string tokenHash, CancellationToken cancellationToken = default);
 
-    /// <summary>Revokes every active refresh token for a user (used after a password reset).</summary>
+    /// <summary>Creates the account's active session and first refresh token if no other session is active.</summary>
+    Task<bool> TryCreateSessionAsync(
+        Guid userId, Guid sessionId, RefreshToken refreshToken, CancellationToken cancellationToken = default);
+
+    /// <summary>Rotates an active refresh token inside the current server-side session.</summary>
+    Task<bool> TryRotateRefreshTokenAsync(
+        Guid refreshTokenId,
+        Guid sessionId,
+        string replacementTokenHash,
+        RefreshToken replacementToken,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>True when the user still owns this session and it has an active refresh token.</summary>
+    Task<bool> IsActiveSessionAsync(Guid userId, Guid sessionId, CancellationToken cancellationToken = default);
+
+    /// <summary>Revokes every active refresh token for a session and clears it if it is current.</summary>
+    Task RevokeSessionAsync(Guid userId, Guid sessionId, CancellationToken cancellationToken = default);
+
+    /// <summary>Revokes every active refresh token for a user and clears their active session.</summary>
     Task RevokeAllRefreshTokensAsync(Guid userId, CancellationToken cancellationToken = default);
 
     Task AddAuthTokenAsync(AuthToken token, CancellationToken cancellationToken = default);

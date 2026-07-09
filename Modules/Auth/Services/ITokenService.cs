@@ -12,7 +12,7 @@ internal interface ITokenService
 {
     /// <summary>Builds a signed access JWT with sub/email/name/plan + one studio claim per membership.</summary>
     (string Token, DateTimeOffset ExpiresAt) CreateAccessToken(
-        User user, IReadOnlyList<(Guid StudioId, UserStudioRole Role)> memberships);
+        User user, IReadOnlyList<(Guid StudioId, UserStudioRole Role)> memberships, Guid sessionId);
 
     /// <summary>Generates a cryptographically random opaque refresh token + its SHA-256 hash.</summary>
     (string Token, string TokenHash, DateTimeOffset ExpiresAt) CreateRefreshToken();

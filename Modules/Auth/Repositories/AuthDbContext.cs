@@ -41,6 +41,8 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
             entity.Property(u => u.DisplayName).HasMaxLength(128).IsRequired();
             entity.Property(u => u.Plan).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(u => u.EmailVerifiedAt);
+            entity.Property(u => u.ActiveSessionId);
+            entity.HasIndex(u => u.ActiveSessionId);
             entity.Property(u => u.EmailNotificationsEnabled).IsRequired();
             entity.Property(u => u.ProductUpdatesEnabled).IsRequired();
             entity.Property(u => u.WeeklyDigestEnabled).IsRequired();
@@ -123,8 +125,10 @@ public sealed class AuthDbContext(DbContextOptions<AuthDbContext> options) : DbC
         {
             entity.ToTable("refresh_tokens");
             entity.HasKey(rt => rt.Id);
+            entity.Property(rt => rt.SessionId);
             entity.Property(rt => rt.TokenHash).HasMaxLength(128).IsRequired();
             entity.HasIndex(rt => rt.TokenHash).IsUnique();
+            entity.HasIndex(rt => new { rt.UserId, rt.SessionId, rt.RevokedAt, rt.ExpiresAt });
             entity.Property(rt => rt.ReplacedByTokenHash).HasMaxLength(128);
             entity.Ignore(rt => rt.IsActive);
 

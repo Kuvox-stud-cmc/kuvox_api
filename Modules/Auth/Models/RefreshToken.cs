@@ -11,6 +11,8 @@ public sealed class RefreshToken : BaseEntity
 {
     public required Guid UserId { get; set; }
 
+    public Guid? SessionId { get; set; }
+
     public required string TokenHash { get; set; }
 
     public required DateTimeOffset ExpiresAt { get; set; }

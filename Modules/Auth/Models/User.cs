@@ -16,6 +16,9 @@ public sealed class User : BaseEntity
     /// <summary>When the user confirmed their email; <c>null</c> while unverified (soft gate).</summary>
     public DateTimeOffset? EmailVerifiedAt { get; set; }
 
+    /// <summary>The only currently accepted login session for this account.</summary>
+    public Guid? ActiveSessionId { get; set; }
+
     public bool EmailNotificationsEnabled { get; set; } = true;
 
     public bool ProductUpdatesEnabled { get; set; } = true;

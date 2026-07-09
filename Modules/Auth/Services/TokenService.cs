@@ -21,10 +21,13 @@ internal sealed class TokenService(IOptions<JwtOptions> options) : ITokenService
     /// <summary>Custom claim type carrying a studio membership encoded as <c>{studioId}:{role}</c>.</summary>
     public const string StudioClaimType = "studio";
 
+    /// <summary>JWT session id claim. Must match the user's active server-side session.</summary>
+    public const string SessionClaimType = "sid";
+
     private readonly JwtOptions _options = options.Value;
 
     public (string Token, DateTimeOffset ExpiresAt) CreateAccessToken(
-        User user, IReadOnlyList<(Guid StudioId, UserStudioRole Role)> memberships)
+        User user, IReadOnlyList<(Guid StudioId, UserStudioRole Role)> memberships, Guid sessionId)
     {
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(_options.AccessTokenMinutes);
 
@@ -32,6 +35,7 @@ internal sealed class TokenService(IOptions<JwtOptions> options) : ITokenService
         {
             new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new(SessionClaimType, sessionId.ToString()),
             new(JwtRegisteredClaimNames.Email, user.Email),
             new(JwtRegisteredClaimNames.Name, user.DisplayName),
             new(PlanClaimType, user.Plan.ToString()),
