@@ -28,6 +28,7 @@ public sealed class AuthExceptionHandler : IExceptionHandler
             Detail = authException.Message,
             Instance = httpContext.Request.Path,
         };
+        problem.Extensions["code"] = authException.Code;
 
         httpContext.Response.StatusCode = authException.StatusCode;
         await httpContext.Response.WriteAsJsonAsync(problem, cancellationToken);

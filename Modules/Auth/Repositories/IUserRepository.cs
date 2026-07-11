@@ -24,9 +24,13 @@ internal interface IUserRepository
 
     Task<RefreshToken?> GetRefreshTokenByHashAsync(string tokenHash, CancellationToken cancellationToken = default);
 
-    /// <summary>Creates the account's active session and first refresh token if no other session is active.</summary>
-    Task<bool> TryCreateSessionAsync(
-        Guid userId, Guid sessionId, RefreshToken refreshToken, CancellationToken cancellationToken = default);
+    /// <summary>Creates or explicitly replaces the account's active session atomically.</summary>
+    Task<CreateSessionResult> CreateSessionAsync(
+        Guid userId,
+        Guid sessionId,
+        RefreshToken refreshToken,
+        bool replaceExistingSession,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Rotates an active refresh token inside the current server-side session.</summary>
     Task<bool> TryRotateRefreshTokenAsync(
@@ -56,4 +60,11 @@ internal interface IUserRepository
         Guid userId, AuthTokenPurpose purpose, CancellationToken cancellationToken = default);
 
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
+}
+
+internal enum CreateSessionResult
+{
+    Created,
+    ActiveSessionConflict,
+    UserNotFound,
 }

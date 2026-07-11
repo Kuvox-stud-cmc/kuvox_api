@@ -40,10 +40,11 @@ internal sealed class UserRepository(AuthDbContext db) : IUserRepository
     public Task<RefreshToken?> GetRefreshTokenByHashAsync(string tokenHash, CancellationToken cancellationToken = default) =>
         db.RefreshTokens.FirstOrDefaultAsync(rt => rt.TokenHash == tokenHash, cancellationToken);
 
-    public async Task<bool> TryCreateSessionAsync(
+    public async Task<CreateSessionResult> CreateSessionAsync(
         Guid userId,
         Guid sessionId,
         RefreshToken refreshToken,
+        bool replaceExistingSession,
         CancellationToken cancellationToken = default)
     {
         var strategy = db.Database.CreateExecutionStrategy();
@@ -58,7 +59,7 @@ internal sealed class UserRepository(AuthDbContext db) : IUserRepository
 
             if (user is null)
             {
-                return false;
+                return CreateSessionResult.UserNotFound;
             }
 
             if (user.ActiveSessionId is { } activeSessionId)
@@ -70,9 +71,24 @@ internal sealed class UserRepository(AuthDbContext db) : IUserRepository
                         && rt.ExpiresAt > now,
                     cancellationToken);
 
-                if (activeTokenExists)
+                if (activeTokenExists && !replaceExistingSession)
                 {
-                    return false;
+                    return CreateSessionResult.ActiveSessionConflict;
+                }
+
+                if (replaceExistingSession)
+                {
+                    var activeTokens = await db.RefreshTokens
+                        .Where(rt => rt.UserId == userId
+                            && rt.SessionId == activeSessionId
+                            && rt.RevokedAt == null)
+                        .ToListAsync(cancellationToken);
+
+                    foreach (var token in activeTokens)
+                    {
+                        token.RevokedAt = now;
+                        token.UpdatedAt = now;
+                    }
                 }
             }
 
@@ -85,7 +101,7 @@ internal sealed class UserRepository(AuthDbContext db) : IUserRepository
 
             await db.SaveChangesAsync(cancellationToken);
             await tx.CommitAsync(cancellationToken);
-            return true;
+            return CreateSessionResult.Created;
         });
     }
 

@@ -31,8 +31,78 @@ public sealed class AuthServiceSessionTests
             service.LoginAsync(new LoginRequest(Email, Password)));
 
         Assert.Equal(StatusCodes.Status409Conflict, ex.StatusCode);
+        Assert.Equal("active_session_conflict", ex.Code);
         Assert.Single(repo.RefreshTokens, t => t.IsActive);
         Assert.Equal(firstSessionId, user.ActiveSessionId);
+    }
+
+    [Fact]
+    public async Task LoginAsync_takeover_revokes_old_session_and_creates_one_new_session()
+    {
+        var (service, repo, user) = CreateService();
+        var first = await service.LoginAsync(new LoginRequest(Email, Password));
+        var firstSessionId = user.ActiveSessionId!.Value;
+
+        var second = await service.LoginAsync(new LoginRequest(Email, Password, ReplaceExistingSession: true));
+        var secondSessionId = user.ActiveSessionId!.Value;
+
+        Assert.NotEqual(firstSessionId, secondSessionId);
+        Assert.Equal(secondSessionId.ToString(), ReadSessionId(second.AccessToken));
+        Assert.Single(repo.RefreshTokens, t => t.IsActive);
+        Assert.All(
+            repo.RefreshTokens.Where(t => t.SessionId == firstSessionId),
+            token => Assert.NotNull(token.RevokedAt));
+        Assert.False(await repo.IsActiveSessionAsync(user.Id, firstSessionId));
+
+        var refreshError = await Assert.ThrowsAsync<AuthException>(() => service.RefreshAsync(first.RefreshToken));
+        Assert.Equal(StatusCodes.Status401Unauthorized, refreshError.StatusCode);
+        Assert.Equal("session_replaced", refreshError.Code);
+    }
+
+    [Fact]
+    public async Task LoginAsync_takeover_with_incorrect_password_keeps_existing_session()
+    {
+        var (service, repo, user) = CreateService();
+        await service.LoginAsync(new LoginRequest(Email, Password));
+        var firstSessionId = user.ActiveSessionId;
+
+        var error = await Assert.ThrowsAsync<AuthException>(() =>
+            service.LoginAsync(new LoginRequest(Email, "incorrect", ReplaceExistingSession: true)));
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, error.StatusCode);
+        Assert.Equal(firstSessionId, user.ActiveSessionId);
+        Assert.Single(repo.RefreshTokens, t => t.IsActive);
+    }
+
+    [Fact]
+    public async Task LoginAsync_allows_normal_login_when_old_refresh_token_expired()
+    {
+        var (service, repo, user) = CreateService();
+        await service.LoginAsync(new LoginRequest(Email, Password));
+        var firstSessionId = user.ActiveSessionId;
+        repo.RefreshTokens.Single().ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+
+        var second = await service.LoginAsync(new LoginRequest(Email, Password));
+
+        Assert.NotEqual(firstSessionId, user.ActiveSessionId);
+        Assert.Equal(user.ActiveSessionId.ToString(), ReadSessionId(second.AccessToken));
+        Assert.Single(repo.RefreshTokens, t => t.IsActive);
+    }
+
+    [Fact]
+    public async Task Concurrent_normal_login_and_takeover_leave_one_active_session()
+    {
+        var (service, repo, user) = CreateService();
+        await service.LoginAsync(new LoginRequest(Email, Password));
+
+        var normalLogin = CaptureLoginAsync(service, replaceExistingSession: false);
+        var takeover = CaptureLoginAsync(service, replaceExistingSession: true);
+        var results = await Task.WhenAll(normalLogin, takeover);
+
+        Assert.Contains(results, result => result.Tokens is not null);
+        Assert.Contains(results, result => result.Error?.Code == "active_session_conflict");
+        Assert.Single(repo.RefreshTokens, t => t.IsActive);
+        Assert.NotNull(user.ActiveSessionId);
     }
 
     [Fact]
@@ -130,6 +200,22 @@ public sealed class AuthServiceSessionTests
             .FirstOrDefault(c => c.Type == TokenService.SessionClaimType)
             ?.Value;
 
+    private static async Task<(AuthTokenDto? Tokens, AuthException? Error)> CaptureLoginAsync(
+        AuthService service,
+        bool replaceExistingSession)
+    {
+        try
+        {
+            return (
+                await service.LoginAsync(new LoginRequest(Email, Password, replaceExistingSession)),
+                null);
+        }
+        catch (AuthException error)
+        {
+            return (null, error);
+        }
+    }
+
     private sealed class FakeUserRepository : IUserRepository
     {
         private readonly object _gate = new();
@@ -170,10 +256,11 @@ public sealed class AuthServiceSessionTests
             string tokenHash, CancellationToken cancellationToken = default) =>
             Task.FromResult(RefreshTokens.FirstOrDefault(rt => rt.TokenHash == tokenHash));
 
-        public Task<bool> TryCreateSessionAsync(
+        public Task<CreateSessionResult> CreateSessionAsync(
             Guid userId,
             Guid sessionId,
             RefreshToken refreshToken,
+            bool replaceExistingSession,
             CancellationToken cancellationToken = default)
         {
             lock (_gate)
@@ -181,20 +268,34 @@ public sealed class AuthServiceSessionTests
                 var user = Users.FirstOrDefault(u => u.Id == userId);
                 if (user is null)
                 {
-                    return Task.FromResult(false);
+                    return Task.FromResult(CreateSessionResult.UserNotFound);
                 }
 
-                if (user.ActiveSessionId is { } activeSessionId
-                    && RefreshTokens.Any(rt => rt.UserId == userId && rt.SessionId == activeSessionId && rt.IsActive))
+                if (user.ActiveSessionId is { } activeSessionId)
                 {
-                    return Task.FromResult(false);
+                    var activeTokenExists = RefreshTokens.Any(
+                        rt => rt.UserId == userId && rt.SessionId == activeSessionId && rt.IsActive);
+
+                    if (activeTokenExists && !replaceExistingSession)
+                    {
+                        return Task.FromResult(CreateSessionResult.ActiveSessionConflict);
+                    }
+
+                    if (replaceExistingSession)
+                    {
+                        foreach (var token in RefreshTokens.Where(
+                            rt => rt.UserId == userId && rt.SessionId == activeSessionId && rt.RevokedAt is null))
+                        {
+                            token.RevokedAt = DateTimeOffset.UtcNow;
+                        }
+                    }
                 }
 
                 user.ActiveSessionId = sessionId;
                 refreshToken.UserId = userId;
                 refreshToken.SessionId = sessionId;
                 RefreshTokens.Add(refreshToken);
-                return Task.FromResult(true);
+                return Task.FromResult(CreateSessionResult.Created);
             }
         }
 

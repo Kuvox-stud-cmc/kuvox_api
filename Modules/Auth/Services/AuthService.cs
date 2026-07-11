@@ -99,7 +99,7 @@ internal sealed class AuthService(
             throw AuthException.Forbidden("Please verify your email before signing in.");
         }
 
-        return await IssueNewSessionTokensAsync(user, cancellationToken);
+        return await IssueNewSessionTokensAsync(user, request.ReplaceExistingSession, cancellationToken);
     }
 
     public async Task<AuthTokenDto> RefreshAsync(string refreshToken, CancellationToken cancellationToken = default)
@@ -107,7 +107,7 @@ internal sealed class AuthService(
         var hash = tokens.HashToken(refreshToken);
         var stored = await users.GetRefreshTokenByHashAsync(hash, cancellationToken);
 
-        if (stored is null || !stored.IsActive || stored.SessionId is not { } sessionId)
+        if (stored is null || stored.SessionId is not { } sessionId)
         {
             throw AuthException.Unauthorized("Invalid or expired refresh token.");
         }
@@ -115,7 +115,14 @@ internal sealed class AuthService(
         var user = await users.GetByIdAsync(stored.UserId, cancellationToken)
             ?? throw AuthException.Unauthorized("Invalid or expired refresh token.");
 
-        if (user.ActiveSessionId != sessionId)
+        if (user.ActiveSessionId != sessionId || stored.RevokedAt is not null)
+        {
+            throw AuthException.Unauthorized(
+                "This session is no longer active.",
+                "session_replaced");
+        }
+
+        if (stored.ExpiresAt <= DateTimeOffset.UtcNow)
         {
             throw AuthException.Unauthorized("Invalid or expired refresh token.");
         }
@@ -291,7 +298,7 @@ internal sealed class AuthService(
         }
 
         // Auto-login: establish a session in the browser that opened the link.
-        var issued = await IssueNewSessionTokensAsync(user, cancellationToken);
+        var issued = await IssueNewSessionTokensAsync(user, replaceExistingSession: false, cancellationToken);
 
         return new VerifyEmailResult(issued, wasUnverified);
     }
@@ -434,13 +441,16 @@ internal sealed class AuthService(
             cancellationToken);
     }
 
-    private async Task<AuthTokenDto> IssueNewSessionTokensAsync(User user, CancellationToken cancellationToken)
+    private async Task<AuthTokenDto> IssueNewSessionTokensAsync(
+        User user,
+        bool replaceExistingSession,
+        CancellationToken cancellationToken)
     {
         var memberships = await users.GetStudioMembershipsAsync(user.Id, cancellationToken);
         var sessionId = Guid.CreateVersion7();
         var (accessToken, expiresAt) = tokens.CreateAccessToken(user, memberships, sessionId);
         var (refreshToken, refreshHash, refreshExpiresAt) = tokens.CreateRefreshToken();
-        var created = await users.TryCreateSessionAsync(
+        var result = await users.CreateSessionAsync(
             user.Id,
             sessionId,
             new RefreshToken
@@ -450,11 +460,17 @@ internal sealed class AuthService(
                 TokenHash = refreshHash,
                 ExpiresAt = refreshExpiresAt,
             },
+            replaceExistingSession,
             cancellationToken);
 
-        if (!created)
+        if (result == CreateSessionResult.ActiveSessionConflict)
         {
-            throw AuthException.Conflict("This account is already signed in on another device.");
+            throw AuthException.ActiveSessionConflict();
+        }
+
+        if (result == CreateSessionResult.UserNotFound)
+        {
+            throw AuthException.Unauthorized("Invalid email or password.");
         }
 
         return new AuthTokenDto(accessToken, refreshToken, expiresAt);
