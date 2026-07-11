@@ -20,11 +20,20 @@ public interface ITimelineService
 
     Task<TimelineRevisionDto> AddRevisionAsync(Guid timelineId, CreateRevisionRequest request, CancellationToken cancellationToken = default);
 
-    /// <summary>Persists a queued render job for the latest synced timeline revision.</summary>
+    /// <summary>Persists a queued render job for an existing immutable timeline revision.</summary>
     Task<RenderJobDto> RequestRenderAsync(Guid timelineId, CallerContext caller, RenderTimelineRequest request, CancellationToken cancellationToken = default);
 
     Task<RenderJobDto> GetRenderJobAsync(Guid renderJobId, CallerContext caller, CancellationToken cancellationToken = default);
 
+    Task<RenderJobOutputDownload> GetRenderJobOutputAsync(Guid renderJobId, CallerContext caller, CancellationToken cancellationToken = default);
+
     /// <summary>Validates and logs client-side video editor performance metrics.</summary>
     Task RecordPerformanceAsync(Guid projectId, CallerContext caller, RecordVideoEditorPerformanceRequest request, CancellationToken cancellationToken = default);
 }
+
+public sealed record RenderJobOutputDownload(
+    Stream Stream,
+    string ContentType,
+    long? ContentLength,
+    string? ETag,
+    string FileName);

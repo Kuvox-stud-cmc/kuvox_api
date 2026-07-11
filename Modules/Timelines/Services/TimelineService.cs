@@ -18,6 +18,8 @@ internal sealed class TimelineService(
     ITimelineRepository timelines,
     IProjectsApi projects,
     IMediaApi media,
+    IFileStorageService storage,
+    IRenderRealtimeNotifier realtime,
     IOptions<RabbitMqOptions> rabbitMqOptions,
     IOptions<StorageOptions> storageOptions,
     ILogger<TimelineService> logger) : ITimelineService
@@ -25,6 +27,8 @@ internal sealed class TimelineService(
     private readonly ITimelineRepository _timelines = timelines;
     private readonly IProjectsApi _projects = projects;
     private readonly IMediaApi _media = media;
+    private readonly IFileStorageService _storage = storage;
+    private readonly IRenderRealtimeNotifier _realtime = realtime;
     private readonly RabbitMqOptions _rabbitMqOptions = rabbitMqOptions.Value;
     private readonly StorageOptions _storageOptions = storageOptions.Value;
     private readonly ILogger<TimelineService> _logger = logger;
@@ -181,26 +185,6 @@ internal sealed class TimelineService(
         var project = await _projects.RequireWriteAccessAsync(timeline.ProjectId, caller, cancellationToken);
         RequireVideoProject(project);
 
-        var latestRevision = await _timelines.GetLatestRevisionAsync(timeline.Id, cancellationToken)
-            ?? throw DomainException.NotFound("Timeline revision not found.");
-
-        if (request.RevisionNumber < latestRevision.RevisionNumber)
-        {
-            _logger.LogWarning(
-                "VideoTimelineRenderConflict ProjectId={ProjectId} TimelineId={TimelineId} RequestedRevisionNumber={RequestedRevisionNumber} ServerRevisionId={ServerRevisionId} ServerRevisionNumber={ServerRevisionNumber}",
-                timeline.ProjectId,
-                timeline.Id,
-                request.RevisionNumber,
-                latestRevision.Id,
-                latestRevision.RevisionNumber);
-            throw DomainException.Conflict("Render request revision is not the latest synced timeline revision.");
-        }
-
-        if (request.RevisionNumber > latestRevision.RevisionNumber)
-        {
-            throw DomainException.NotFound("Timeline revision not found.");
-        }
-
         var revision = await _timelines.GetRevisionByNumberAsync(timeline.Id, request.RevisionNumber, cancellationToken)
             ?? throw DomainException.NotFound("Timeline revision not found.");
 
@@ -210,7 +194,7 @@ internal sealed class TimelineService(
         var outputContentType = format == "mov"
             ? "video/quicktime"
             : "video/mp4";
-        var outputBucketName = _storageOptions.RawBucketName;
+        var outputBucketName = _storageOptions.RenderBucketName;
         var renderJob = new RenderJob
         {
             TimelineId = timeline.Id,
@@ -253,6 +237,7 @@ internal sealed class TimelineService(
                 requested),
             cancellationToken);
         await _timelines.SaveChangesAsync(cancellationToken);
+        await _realtime.RenderJobUpdatedAsync(renderJob, cancellationToken);
 
         _logger.LogInformation(
             "VideoTimelineRenderQueued ProjectId={ProjectId} TimelineId={TimelineId} RevisionId={RevisionId} RevisionNumber={RevisionNumber} RenderJobId={RenderJobId}",
@@ -279,6 +264,45 @@ internal sealed class TimelineService(
             ? null
             : await _timelines.GetRevisionByIdAsync(renderJob.RevisionId.Value, cancellationToken);
         return ToRenderJobDto(renderJob, revision?.RevisionNumber);
+    }
+
+    public async Task<RenderJobOutputDownload> GetRenderJobOutputAsync(
+        Guid renderJobId,
+        CallerContext caller,
+        CancellationToken cancellationToken = default)
+    {
+        var renderJob = await _timelines.GetRenderJobByIdAsync(renderJobId, cancellationToken)
+            ?? throw DomainException.NotFound("Render job not found.");
+        var timeline = await _timelines.GetByIdAsync(renderJob.TimelineId, cancellationToken)
+            ?? throw DomainException.NotFound("Video timeline not found.");
+        await _projects.RequireReadAccessAsync(timeline.ProjectId, caller, cancellationToken);
+
+        if (renderJob.Status != RenderStatus.Completed)
+        {
+            throw DomainException.Conflict("Render output is only available after the job completes.");
+        }
+
+        if (string.IsNullOrWhiteSpace(renderJob.OutputBucketName)
+            || string.IsNullOrWhiteSpace(renderJob.OutputStorageKey))
+        {
+            throw DomainException.NotFound("Render output not found.");
+        }
+
+        var downloaded = await _storage.DownloadAsync(
+            renderJob.OutputBucketName,
+            renderJob.OutputStorageKey,
+            cancellationToken);
+
+        var contentType = string.IsNullOrWhiteSpace(downloaded.ContentType)
+            ? renderJob.OutputContentType ?? ContentTypeForRenderOutput(renderJob.OutputStorageKey)
+            : downloaded.ContentType;
+
+        return new RenderJobOutputDownload(
+            downloaded.Stream,
+            contentType,
+            downloaded.ContentLength,
+            downloaded.ETag,
+            DownloadFileName(renderJob.OutputStorageKey));
     }
 
     public async Task RecordPerformanceAsync(
@@ -330,24 +354,26 @@ internal sealed class TimelineService(
             revision.CreatedByUserId);
     }
 
-    private static RenderJobDto ToRenderJobDto(RenderJob renderJob, int? revisionNumber) =>
-        new(
+    private static RenderJobDto ToRenderJobDto(RenderJob renderJob, int? revisionNumber)
+    {
+        var realtime = RenderRealtimeUpdate.FromJob(renderJob);
+        return new(
             renderJob.Id,
             renderJob.TimelineId,
             renderJob.RevisionId,
             revisionNumber,
             renderJob.Status.ToString().ToLowerInvariant(),
-            renderJob.OutputBucketName,
-            renderJob.OutputStorageKey,
+            realtime.OutputAvailable,
             renderJob.OutputContentType,
             renderJob.OutputSizeBytes,
-            null,
             renderJob.ErrorCode,
             renderJob.ErrorMessage,
+            realtime.Message,
             renderJob.StartedAt,
             renderJob.FinishedAt,
             renderJob.CreatedAt,
             renderJob.UpdatedAt);
+    }
 
     private async Task<IReadOnlyList<RenderingMediaSource>> ResolveReferencedMediaAsync(
         string documentJson,
@@ -370,10 +396,8 @@ internal sealed class TimelineService(
                 throw DomainException.BadRequest("Render request contains media that is missing, inaccessible, deleted, failed, or still processing.");
             }
 
-            var sourceKey = resolution.Media.CanonicalStorageKey
-                ?? resolution.Media.ProxyStorageKey
-                ?? resolution.Media.StorageKey;
-            if (string.IsNullOrWhiteSpace(sourceKey))
+            var sourceObject = PreferredRenderSource(resolution.Media);
+            if (sourceObject is null)
             {
                 throw DomainException.BadRequest("Render request contains media without a usable storage object.");
             }
@@ -381,8 +405,8 @@ internal sealed class TimelineService(
             sources.Add(new RenderingMediaSource(
                 resolution.MediaId,
                 resolution.Media.Kind.ToString(),
-                null,
-                sourceKey,
+                sourceObject.Value.BucketName,
+                sourceObject.Value.ObjectKey,
                 null,
                 resolution.Media.SizeBytes,
                 resolution.Media.DurationSeconds,
@@ -393,6 +417,35 @@ internal sealed class TimelineService(
         }
 
         return sources;
+    }
+
+    private static (string BucketName, string ObjectKey)? PreferredRenderSource(MediaSummary media)
+    {
+        if (media.CanonicalBucketName is { Length: > 0 } canonicalBucket
+            && media.CanonicalStorageKey is { Length: > 0 } canonicalKey)
+        {
+            return (canonicalBucket, canonicalKey);
+        }
+
+        if (media.ProxyBucketName is { Length: > 0 } proxyBucket
+            && media.ProxyStorageKey is { Length: > 0 } proxyKey)
+        {
+            return (proxyBucket, proxyKey);
+        }
+
+        if (media.RawBucketName is { Length: > 0 } rawBucket
+            && media.RawStorageKey is { Length: > 0 } rawKey)
+        {
+            return (rawBucket, rawKey);
+        }
+
+        if (media.RawBucketName is { Length: > 0 } legacyRawBucket
+            && media.StorageKey is { Length: > 0 } legacyRawKey)
+        {
+            return (legacyRawBucket, legacyRawKey);
+        }
+
+        return null;
     }
 
     private static IReadOnlyCollection<Guid> ExtractReferencedMediaIds(JsonElement document)
@@ -639,5 +692,21 @@ internal sealed class TimelineService(
         }
 
         return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength];
+    }
+
+    private static string ContentTypeForRenderOutput(string objectKey) =>
+        Path.GetExtension(objectKey).ToLowerInvariant() switch
+        {
+            ".mov" => "video/quicktime",
+            ".mp4" => "video/mp4",
+            _ => "application/octet-stream"
+        };
+
+    private static string DownloadFileName(string objectKey)
+    {
+        var extension = Path.GetExtension(objectKey);
+        return string.IsNullOrWhiteSpace(extension)
+            ? "kuvox-render"
+            : $"kuvox-render{extension}";
     }
 }

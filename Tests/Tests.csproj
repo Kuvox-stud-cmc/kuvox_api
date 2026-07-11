@@ -22,4 +22,10 @@
     <ProjectReference Include="..\api.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="obj\**\*.cs" />
+    <Content Remove="obj\**\*" />
+    <None Remove="obj\**\*" />
+  </ItemGroup>
+
 </Project>

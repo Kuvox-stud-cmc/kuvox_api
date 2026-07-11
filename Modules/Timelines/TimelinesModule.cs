@@ -17,6 +17,7 @@ public static class TimelinesModule
         services.AddScoped<ITimelineRepository, TimelineRepository>();
         services.AddScoped<ITimelineService, TimelineService>();
         services.AddScoped<ITimelinesApi, TimelinesApi>();
+        services.AddScoped<IRenderRealtimeNotifier, RenderRealtimeNotifier>();
         services.AddHostedService<RenderingResultConsumer>();
 
         return services;
