@@ -316,20 +316,25 @@ public sealed class TimelineServiceTests
     }
 
     [Fact]
-    public async Task RequestRenderAsync_rejects_stale_revision()
+    public async Task RequestRenderAsync_queues_an_older_existing_revision_with_its_exact_snapshot()
     {
         var repository = new FakeTimelineRepository();
         var timeline = repository.AddTimeline(ProjectId);
-        repository.AddRevision(timeline.Id, 4);
+        const string olderDocument = """{"projectId":"11111111-1111-1111-1111-111111111111","settings":{"width":1280},"media":{},"tracks":[],"marker":"older"}""";
+        var older = repository.AddRevision(timeline.Id, 3, olderDocument);
+        repository.AddRevision(timeline.Id, 4, """{"projectId":"11111111-1111-1111-1111-111111111111","settings":{"width":1920},"media":{},"tracks":[],"marker":"newer"}""");
         var service = CreateService(repository);
 
-        var ex = await Assert.ThrowsAsync<DomainException>(() =>
-            service.RequestRenderAsync(
-                timeline.Id,
-                Caller,
-                new RenderTimelineRequest(timeline.Id, 3, Json("""{"format":"mp4","width":1920,"height":1080,"frameRate":30,"quality":"standard"}"""))));
+        var result = await service.RequestRenderAsync(
+            timeline.Id,
+            Caller,
+            new RenderTimelineRequest(timeline.Id, 3, Json("""{"format":"mp4","width":1920,"height":1080,"frameRate":30,"quality":"standard"}""")));
 
-        Assert.Equal(StatusCodes.Status409Conflict, ex.StatusCode);
+        Assert.Equal(older.Id, result.RevisionId);
+        Assert.Equal(3, result.RevisionNumber);
+        using var requested = JsonDocument.Parse(Assert.Single(repository.OutboxMessages).PayloadJson);
+        Assert.Equal(3, requested.RootElement.GetProperty("revisionNumber").GetInt32());
+        Assert.Equal("older", requested.RootElement.GetProperty("documentJson").GetProperty("marker").GetString());
     }
 
     [Fact]

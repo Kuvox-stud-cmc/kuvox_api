@@ -20,7 +20,7 @@ public interface ITimelineService
 
     Task<TimelineRevisionDto> AddRevisionAsync(Guid timelineId, CreateRevisionRequest request, CancellationToken cancellationToken = default);
 
-    /// <summary>Persists a queued render job for the latest synced timeline revision.</summary>
+    /// <summary>Persists a queued render job for an existing immutable timeline revision.</summary>
     Task<RenderJobDto> RequestRenderAsync(Guid timelineId, CallerContext caller, RenderTimelineRequest request, CancellationToken cancellationToken = default);
 
     Task<RenderJobDto> GetRenderJobAsync(Guid renderJobId, CallerContext caller, CancellationToken cancellationToken = default);

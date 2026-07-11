@@ -185,26 +185,6 @@ internal sealed class TimelineService(
         var project = await _projects.RequireWriteAccessAsync(timeline.ProjectId, caller, cancellationToken);
         RequireVideoProject(project);
 
-        var latestRevision = await _timelines.GetLatestRevisionAsync(timeline.Id, cancellationToken)
-            ?? throw DomainException.NotFound("Timeline revision not found.");
-
-        if (request.RevisionNumber < latestRevision.RevisionNumber)
-        {
-            _logger.LogWarning(
-                "VideoTimelineRenderConflict ProjectId={ProjectId} TimelineId={TimelineId} RequestedRevisionNumber={RequestedRevisionNumber} ServerRevisionId={ServerRevisionId} ServerRevisionNumber={ServerRevisionNumber}",
-                timeline.ProjectId,
-                timeline.Id,
-                request.RevisionNumber,
-                latestRevision.Id,
-                latestRevision.RevisionNumber);
-            throw DomainException.Conflict("Render request revision is not the latest synced timeline revision.");
-        }
-
-        if (request.RevisionNumber > latestRevision.RevisionNumber)
-        {
-            throw DomainException.NotFound("Timeline revision not found.");
-        }
-
         var revision = await _timelines.GetRevisionByNumberAsync(timeline.Id, request.RevisionNumber, cancellationToken)
             ?? throw DomainException.NotFound("Timeline revision not found.");
 
