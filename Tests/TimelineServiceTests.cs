@@ -13,6 +13,7 @@ using Kuvox.Api.Modules.Timelines.Models;
 using Kuvox.Api.Modules.Timelines.Repositories;
 using Kuvox.Api.Modules.Timelines.Services;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -78,10 +79,12 @@ public sealed class TimelineServiceTests
     [Fact]
     public async Task RequestRenderAsync_queues_job_for_latest_revision()
     {
+        var mediaId = Guid.Parse("33333333-3333-3333-3333-333333333333");
         var repository = new FakeTimelineRepository();
         var timeline = repository.AddTimeline(ProjectId);
-        var revision = repository.AddRevision(timeline.Id, 3);
-        var service = CreateService(repository);
+        var revision = repository.AddRevision(timeline.Id, 3, DocumentWithMedia(ProjectId, mediaId));
+        var realtime = new FakeRenderRealtimeNotifier(repository);
+        var service = CreateService(repository, realtime: realtime);
 
         var result = await service.RequestRenderAsync(
             timeline.Id,
@@ -96,6 +99,16 @@ public sealed class TimelineServiceTests
         Assert.Single(repository.OutboxMessages);
         Assert.Equal("kuvox.rendering", repository.OutboxMessages[0].RoutingKey);
         Assert.Equal("rendering.requested", repository.OutboxMessages[0].EventType);
+        Assert.Equal("kuvox-renders", repository.RenderJobs[0].OutputBucketName);
+        using var requested = JsonDocument.Parse(repository.OutboxMessages[0].PayloadJson);
+        Assert.Equal("kuvox-renders", requested.RootElement.GetProperty("outputBucketName").GetString());
+        var mediaSources = requested.RootElement.GetProperty("mediaSources");
+        Assert.NotEmpty(mediaSources.EnumerateArray());
+        Assert.Equal("kuvox-canonical", mediaSources[0].GetProperty("bucketName").GetString());
+        Assert.Equal("media/33333333-3333-3333-3333-333333333333/canonical.mp4", mediaSources[0].GetProperty("objectKey").GetString());
+        Assert.Single(realtime.Updates);
+        Assert.Equal("queued", realtime.Updates[0].Status);
+        Assert.Equal([1], realtime.SaveCountsAtPublish);
     }
 
     [Fact]
@@ -139,10 +152,12 @@ public sealed class TimelineServiceTests
             Status = RenderStatus.Queued,
         };
         repository.RenderJobs.Add(job);
+        var realtime = new FakeRenderRealtimeNotifier(repository);
         var sourceEventId = Guid.Parse("44444444-4444-4444-4444-444444444444");
 
         await RenderingResultConsumer.ApplyStartedAsync(
             repository,
+            realtime,
             new RenderingStartedEvent(
                 Guid.CreateVersion7(),
                 "rendering.started",
@@ -155,8 +170,21 @@ public sealed class TimelineServiceTests
         Assert.Equal(RenderStatus.Rendering, job.Status);
         Assert.NotNull(job.StartedAt);
 
+        await RenderingResultConsumer.ApplyStartedAsync(
+            repository,
+            realtime,
+            new RenderingStartedEvent(
+                Guid.CreateVersion7(),
+                "rendering.started",
+                DateTimeOffset.UtcNow,
+                sourceEventId,
+                job.Id,
+                DateTimeOffset.UtcNow),
+            CancellationToken.None);
+
         await RenderingResultConsumer.ApplyCompletedAsync(
             repository,
+            realtime,
             new RenderingCompletedEvent(
                 Guid.CreateVersion7(),
                 "rendering.completed",
@@ -176,6 +204,7 @@ public sealed class TimelineServiceTests
 
         await RenderingResultConsumer.ApplyFailedAsync(
             repository,
+            realtime,
             new RenderingFailedEvent(
                 Guid.CreateVersion7(),
                 "rendering.failed",
@@ -189,6 +218,101 @@ public sealed class TimelineServiceTests
 
         Assert.Equal(RenderStatus.Completed, job.Status);
         Assert.Null(job.ErrorCode);
+
+        var failedJob = new RenderJob
+        {
+            TimelineId = timeline.Id,
+            RevisionId = revision.Id,
+            RequestedByUserId = UserId,
+            Status = RenderStatus.Queued,
+        };
+        repository.RenderJobs.Add(failedJob);
+        var failure = new RenderingFailedEvent(
+            Guid.CreateVersion7(),
+            "rendering.failed",
+            DateTimeOffset.UtcNow,
+            sourceEventId,
+            failedJob.Id,
+            "EncoderFailed",
+            "Encoder failed.",
+            DateTimeOffset.UtcNow);
+        await RenderingResultConsumer.ApplyFailedAsync(repository, realtime, failure, CancellationToken.None);
+        await RenderingResultConsumer.ApplyFailedAsync(repository, realtime, failure, CancellationToken.None);
+
+        Assert.Equal(RenderStatus.Failed, failedJob.Status);
+        Assert.Equal(3, realtime.Updates.Count);
+        Assert.Equal(["rendering", "completed", "failed"], realtime.Updates.Select(update => update.Status));
+        Assert.Equal([1, 2, 3], realtime.SaveCountsAtPublish);
+    }
+
+    [Fact]
+    public async Task GetRenderJobOutputAsync_streams_only_completed_outputs()
+    {
+        var repository = new FakeTimelineRepository();
+        var timeline = repository.AddTimeline(ProjectId);
+        var revision = repository.AddRevision(timeline.Id, 2);
+        var storage = new FakeFileStorageService();
+        var queued = new RenderJob
+        {
+            TimelineId = timeline.Id,
+            RevisionId = revision.Id,
+            RequestedByUserId = UserId,
+            Status = RenderStatus.Queued,
+            OutputBucketName = "kuvox-renders",
+            OutputStorageKey = "renders/queued.mp4",
+            OutputContentType = "video/mp4",
+        };
+        var completed = new RenderJob
+        {
+            TimelineId = timeline.Id,
+            RevisionId = revision.Id,
+            RequestedByUserId = UserId,
+            Status = RenderStatus.Completed,
+            OutputBucketName = "kuvox-renders",
+            OutputStorageKey = "renders/completed.mp4",
+            OutputContentType = "video/mp4",
+        };
+        repository.RenderJobs.AddRange([queued, completed]);
+        var service = CreateService(repository, storage: storage);
+
+        var ex = await Assert.ThrowsAsync<DomainException>(() => service.GetRenderJobOutputAsync(queued.Id, Caller));
+        Assert.Equal(StatusCodes.Status409Conflict, ex.StatusCode);
+
+        var output = await service.GetRenderJobOutputAsync(completed.Id, Caller);
+
+        Assert.Equal("video/mp4", output.ContentType);
+        Assert.Equal("kuvox-render.mp4", output.FileName);
+        Assert.Equal(("kuvox-renders", "renders/completed.mp4"), storage.LastDownload);
+    }
+
+    [Fact]
+    public async Task RenderRealtimeNotifier_targets_requester_without_storage_metadata()
+    {
+        var clients = new RecordingHubClients();
+        var notifier = new RenderRealtimeNotifier(
+            new FakeHubContext(clients),
+            NullLogger<RenderRealtimeNotifier>.Instance);
+        var job = new RenderJob
+        {
+            TimelineId = Guid.NewGuid(),
+            RequestedByUserId = UserId,
+            Status = RenderStatus.Completed,
+            OutputBucketName = "private-bucket",
+            OutputStorageKey = "private/render.mp4",
+            OutputContentType = "video/mp4",
+            OutputSizeBytes = 456,
+        };
+
+        await notifier.RenderJobUpdatedAsync(job);
+
+        Assert.Equal($"user:{UserId}", clients.LastGroup);
+        Assert.Equal("renderJobUpdated", clients.Proxy.Method);
+        var payload = Assert.IsType<RenderRealtimeUpdate>(Assert.Single(clients.Proxy.Arguments));
+        Assert.True(payload.OutputAvailable);
+        var json = JsonSerializer.Serialize(payload);
+        Assert.DoesNotContain("bucket", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("storageKey", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("url", json, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -265,11 +389,15 @@ public sealed class TimelineServiceTests
     private static TimelineService CreateService(
         FakeTimelineRepository repository,
         FakeProjectsApi? projects = null,
-        FakeMediaApi? media = null) =>
+        FakeMediaApi? media = null,
+        FakeFileStorageService? storage = null,
+        FakeRenderRealtimeNotifier? realtime = null) =>
         new(
             repository,
             projects ?? new FakeProjectsApi(),
             media ?? new FakeMediaApi(),
+            storage ?? new FakeFileStorageService(),
+            realtime ?? new FakeRenderRealtimeNotifier(repository),
             Options.Create(new RabbitMqOptions { ExchangeName = "kuvox.events" }),
             Options.Create(new StorageOptions { RawBucketName = "kuvox-renders" }),
             NullLogger<TimelineService>.Instance);
@@ -417,6 +545,7 @@ public sealed class TimelineServiceTests
                         MediaKind.Video,
                         "clip.mp4",
                         "Ready",
+                        CanonicalBucketName: "kuvox-canonical",
                         CanonicalStorageKey: $"media/{mediaId}/canonical.mp4",
                         SizeBytes: 123,
                         DurationSeconds: 10)))
@@ -434,6 +563,7 @@ public sealed class TimelineServiceTests
         public List<RenderJob> RenderJobs { get; } = [];
         public List<OutboxMessage> OutboxMessages { get; } = [];
         public bool SaveChangesCalled { get; private set; }
+        public int SaveChangesCount { get; private set; }
 
         public Timeline AddTimeline(Guid projectId)
         {
@@ -469,6 +599,84 @@ public sealed class TimelineServiceTests
         public Task AddRevisionAsync(TimelineRevision revision, CancellationToken cancellationToken = default) { Revisions.Add(revision); return Task.CompletedTask; }
         public Task AddRenderJobAsync(RenderJob renderJob, CancellationToken cancellationToken = default) { RenderJobs.Add(renderJob); return Task.CompletedTask; }
         public Task EnqueueOutboxAsync(OutboxMessage message, CancellationToken cancellationToken = default) { OutboxMessages.Add(message); return Task.CompletedTask; }
-        public Task SaveChangesAsync(CancellationToken cancellationToken = default) { SaveChangesCalled = true; return Task.CompletedTask; }
+        public Task SaveChangesAsync(CancellationToken cancellationToken = default) { SaveChangesCalled = true; SaveChangesCount++; return Task.CompletedTask; }
+    }
+
+    private sealed class FakeRenderRealtimeNotifier(FakeTimelineRepository repository) : IRenderRealtimeNotifier
+    {
+        public List<RenderRealtimeUpdate> Updates { get; } = [];
+        public List<int> SaveCountsAtPublish { get; } = [];
+
+        public Task RenderJobUpdatedAsync(RenderJob job, CancellationToken cancellationToken = default)
+        {
+            Assert.True(repository.SaveChangesCalled);
+            Updates.Add(RenderRealtimeUpdate.FromJob(job));
+            SaveCountsAtPublish.Add(repository.SaveChangesCount);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeFileStorageService : IFileStorageService
+    {
+        public (string BucketName, string ObjectKey)? LastDownload { get; private set; }
+
+        public Task<StoredMediaObject> UploadRawAsync(IFormFile file, Guid mediaId, CancellationToken cancellationToken = default) =>
+            throw new NotImplementedException();
+
+        public Task<DownloadedMediaObject> DownloadAsync(
+            string bucketName,
+            string objectKey,
+            CancellationToken cancellationToken = default)
+        {
+            LastDownload = (bucketName, objectKey);
+            return Task.FromResult(new DownloadedMediaObject(
+                new MemoryStream([1, 2, 3]),
+                "video/mp4",
+                3,
+                "\"etag\""));
+        }
+
+        public Task DeleteAsync(string bucketName, string objectKey, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+    }
+
+    private sealed class FakeHubContext(RecordingHubClients clients) : IHubContext<MediaHub>
+    {
+        public IHubClients Clients { get; } = clients;
+        public IGroupManager Groups { get; } = new NoopGroupManager();
+    }
+
+    private sealed class RecordingHubClients : IHubClients
+    {
+        public RecordingClientProxy Proxy { get; } = new();
+        public string? LastGroup { get; private set; }
+        public IClientProxy All => Proxy;
+        public IClientProxy AllExcept(IReadOnlyList<string> excludedConnectionIds) => Proxy;
+        public IClientProxy Client(string connectionId) => Proxy;
+        public IClientProxy Clients(IReadOnlyList<string> connectionIds) => Proxy;
+        public IClientProxy Group(string groupName) { LastGroup = groupName; return Proxy; }
+        public IClientProxy GroupExcept(string groupName, IReadOnlyList<string> excludedConnectionIds) => Group(groupName);
+        public IClientProxy Groups(IReadOnlyList<string> groupNames) => Proxy;
+        public IClientProxy User(string userId) => Proxy;
+        public IClientProxy Users(IReadOnlyList<string> userIds) => Proxy;
+    }
+
+    private sealed class RecordingClientProxy : IClientProxy
+    {
+        public string? Method { get; private set; }
+        public object?[] Arguments { get; private set; } = [];
+
+        public Task SendCoreAsync(string method, object?[] args, CancellationToken cancellationToken = default)
+        {
+            Method = method;
+            Arguments = args;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class NoopGroupManager : IGroupManager
+    {
+        public Task AddToGroupAsync(string connectionId, string groupName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task RemoveFromGroupAsync(string connectionId, string groupName, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 }

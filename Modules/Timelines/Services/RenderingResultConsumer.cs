@@ -148,7 +148,7 @@ internal sealed class RenderingResultConsumer(
         BasicDeliverEventArgs ea,
         string queueName,
         string expectedEventType,
-        Func<ITimelineRepository, T, CancellationToken, Task> handle)
+        Func<ITimelineRepository, IRenderRealtimeNotifier, T, CancellationToken, Task> handle)
         where T : class
     {
         if (_channel is null)
@@ -167,7 +167,8 @@ internal sealed class RenderingResultConsumer(
 
             using var scope = scopeFactory.CreateScope();
             var timelines = scope.ServiceProvider.GetRequiredService<ITimelineRepository>();
-            await handle(timelines, message, CancellationToken.None);
+            var realtime = scope.ServiceProvider.GetRequiredService<IRenderRealtimeNotifier>();
+            await handle(timelines, realtime, message, CancellationToken.None);
             await _channel.BasicAckAsync(ea.DeliveryTag, multiple: false);
         }
         catch (JsonException ex)
@@ -187,11 +188,15 @@ internal sealed class RenderingResultConsumer(
         }
     }
 
-    internal static async Task ApplyStartedAsync(ITimelineRepository timelines, RenderingStartedEvent started, CancellationToken cancellationToken)
+    internal static async Task ApplyStartedAsync(
+        ITimelineRepository timelines,
+        IRenderRealtimeNotifier realtime,
+        RenderingStartedEvent started,
+        CancellationToken cancellationToken)
     {
         var job = await timelines.GetRenderJobByIdAsync(started.RenderJobId, cancellationToken)
             ?? throw DomainException.NotFound("Render job not found.");
-        if (job.Status is RenderStatus.Completed or RenderStatus.Failed)
+        if (job.Status != RenderStatus.Queued)
         {
             return;
         }
@@ -200,9 +205,14 @@ internal sealed class RenderingResultConsumer(
         job.StartedAt ??= started.StartedAt;
         job.UpdatedAt = started.OccurredAt;
         await timelines.SaveChangesAsync(cancellationToken);
+        await realtime.RenderJobUpdatedAsync(job, cancellationToken);
     }
 
-    internal static async Task ApplyCompletedAsync(ITimelineRepository timelines, RenderingCompletedEvent completed, CancellationToken cancellationToken)
+    internal static async Task ApplyCompletedAsync(
+        ITimelineRepository timelines,
+        IRenderRealtimeNotifier realtime,
+        RenderingCompletedEvent completed,
+        CancellationToken cancellationToken)
     {
         var job = await timelines.GetRenderJobByIdAsync(completed.RenderJobId, cancellationToken)
             ?? throw DomainException.NotFound("Render job not found.");
@@ -226,9 +236,14 @@ internal sealed class RenderingResultConsumer(
         job.ErrorMessage = null;
         job.UpdatedAt = completed.OccurredAt;
         await timelines.SaveChangesAsync(cancellationToken);
+        await realtime.RenderJobUpdatedAsync(job, cancellationToken);
     }
 
-    internal static async Task ApplyFailedAsync(ITimelineRepository timelines, RenderingFailedEvent failed, CancellationToken cancellationToken)
+    internal static async Task ApplyFailedAsync(
+        ITimelineRepository timelines,
+        IRenderRealtimeNotifier realtime,
+        RenderingFailedEvent failed,
+        CancellationToken cancellationToken)
     {
         var job = await timelines.GetRenderJobByIdAsync(failed.RenderJobId, cancellationToken)
             ?? throw DomainException.NotFound("Render job not found.");
@@ -243,6 +258,7 @@ internal sealed class RenderingResultConsumer(
         job.FinishedAt = failed.FinishedAt;
         job.UpdatedAt = failed.OccurredAt;
         await timelines.SaveChangesAsync(cancellationToken);
+        await realtime.RenderJobUpdatedAsync(job, cancellationToken);
     }
 
     private async Task SafeDlqOrRequeueAsync(BasicDeliverEventArgs ea, string queueName, Exception exception)

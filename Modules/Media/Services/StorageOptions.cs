@@ -11,6 +11,7 @@ public sealed class StorageOptions
     public string AccessKey { get; init; } = string.Empty;
     public string SecretKey { get; init; } = string.Empty;
     public string RawBucketName { get; init; } = "kuvox-raw";
+    public string RenderBucketName { get; init; } = "kuvox-renders";
     public bool CreateBucket { get; init; }
 
     public static string? Validate(StorageOptions options)
@@ -46,6 +47,11 @@ public sealed class StorageOptions
         if (string.IsNullOrWhiteSpace(options.RawBucketName))
         {
             return "Storage configuration error: Storage:RawBucketName is required.";
+        }
+
+        if (string.IsNullOrWhiteSpace(options.RenderBucketName))
+        {
+            return "Storage configuration error: Storage:RenderBucketName is required.";
         }
 
         return null;

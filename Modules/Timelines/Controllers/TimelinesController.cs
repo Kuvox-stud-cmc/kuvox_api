@@ -43,6 +43,26 @@ public sealed class TimelinesController(ITimelineService timelines) : Controller
     public Task<RenderJobDto> GetRenderJob(Guid jobId, CancellationToken ct) =>
         timelines.GetRenderJobAsync(jobId, Caller(), ct);
 
+    [HttpGet("render-jobs/{jobId:guid}/output")]
+    [HttpHead("render-jobs/{jobId:guid}/output")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetRenderJobOutput(Guid jobId, CancellationToken ct)
+    {
+        var file = await timelines.GetRenderJobOutputAsync(jobId, Caller(), ct);
+        Response.Headers.CacheControl = "private, max-age=300";
+        if (file.ContentLength is > 0)
+        {
+            Response.ContentLength = file.ContentLength;
+        }
+
+        if (!string.IsNullOrWhiteSpace(file.ETag))
+        {
+            Response.Headers.ETag = file.ETag;
+        }
+
+        return File(file.Stream, file.ContentType, file.FileName, enableRangeProcessing: true);
+    }
+
     [HttpPost("projects/{projectId:guid}/performance")]
     public async Task<IActionResult> RecordPerformance(Guid projectId, RecordVideoEditorPerformanceRequest request, CancellationToken ct)
     {

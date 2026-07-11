@@ -25,6 +25,15 @@ public interface ITimelineService
 
     Task<RenderJobDto> GetRenderJobAsync(Guid renderJobId, CallerContext caller, CancellationToken cancellationToken = default);
 
+    Task<RenderJobOutputDownload> GetRenderJobOutputAsync(Guid renderJobId, CallerContext caller, CancellationToken cancellationToken = default);
+
     /// <summary>Validates and logs client-side video editor performance metrics.</summary>
     Task RecordPerformanceAsync(Guid projectId, CallerContext caller, RecordVideoEditorPerformanceRequest request, CancellationToken cancellationToken = default);
 }
+
+public sealed record RenderJobOutputDownload(
+    Stream Stream,
+    string ContentType,
+    long? ContentLength,
+    string? ETag,
+    string FileName);
