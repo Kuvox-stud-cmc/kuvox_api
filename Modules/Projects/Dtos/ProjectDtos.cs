@@ -1,6 +1,7 @@
 using Kuvox.Api.Modules.Projects.Enums;
 using MediaKind = Kuvox.Api.Modules.Media.Enums.MediaKind;
 using System.Text.Json;
+using Kuvox.Api.Modules.Shared.Dtos;
 
 namespace Kuvox.Api.Modules.Projects.Dtos;
 
@@ -66,7 +67,8 @@ public sealed record ProjectMediaDto(
     int? Height,
     string? Codec,
     double? FrameRate,
-    DateTimeOffset? CreatedAt);
+    DateTimeOffset? CreatedAt,
+    long? SearchRevision);
 
 /// <summary>A trashed project plus how long until auto-purge removes it (7-day window).</summary>
 public sealed record ProjectTrashItemDto(
@@ -97,3 +99,21 @@ public sealed record ImageCompositionRevisionDto(
     JsonElement OperationsJson,
     DateTimeOffset CreatedAt,
     Guid CreatedByUserId);
+
+public sealed record EditorBootstrapTimelineDto(
+    Guid ProjectId,
+    Guid TimelineId,
+    Guid RevisionId,
+    JsonElement DocumentJson,
+    int RevisionNumber,
+    int DocumentSchemaVersion,
+    string? Source,
+    string? Label,
+    DateTimeOffset UpdatedAt,
+    Guid UpdatedByUserId);
+
+public sealed record ProjectEditorBootstrapDto(
+    ProjectDto Project,
+    PagedResult<ProjectMediaDto> ProjectMedia,
+    EditorBootstrapTimelineDto? VideoTimeline,
+    ImageCompositionDto? ImageComposition);

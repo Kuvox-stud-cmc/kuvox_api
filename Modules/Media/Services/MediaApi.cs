@@ -153,6 +153,7 @@ internal sealed class MediaApi(IMediaRepository media, IAlbumRepository albums) 
             Height: height,
             Codec: item.Codec,
             FrameRate: frameRate,
-            CreatedAt: item.CreatedAt);
+            CreatedAt: item.CreatedAt,
+            SearchRevision: item.SearchRevision);
     }
 }

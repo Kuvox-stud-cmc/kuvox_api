@@ -5,6 +5,8 @@ using Kuvox.Api.Modules.Auth.Repositories;
 using Kuvox.Api.Modules.Auth.Services;
 using Kuvox.Api.Modules.Shared.Infrastructure;
 using Kuvox.Api.Modules.Shared.Infrastructure.Email;
+using Kuvox.Api.Modules.Shared.Infrastructure.Metrics;
+using Kuvox.Api.Modules.Shared.Infrastructure.Caching;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -26,15 +28,19 @@ public static class AuthModule
 
     public static IServiceCollection AddAuthModule(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddDbContext<AuthDbContext>(options =>
+        services.AddDbContext<AuthDbContext>((sp, options) =>
+        {
             options.UseNpgsql(
                 configuration.GetConnectionString("Postgres"),
-                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", AuthDbContext.Schema)));
+                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", AuthDbContext.Schema));
+            options.AddInterceptors(sp.GetRequiredService<DatabaseCommandMetricsInterceptor>());
+        });
 
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IStudioRepository, StudioRepository>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IStudioService, StudioService>();
+        services.AddScoped<ICachePrewarmTarget, StudioCachePrewarmTarget>();
         services.AddScoped<ITokenService, TokenService>();
         services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
 

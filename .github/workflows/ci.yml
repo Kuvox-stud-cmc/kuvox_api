@@ -10,6 +10,16 @@ jobs:
   build:
     name: Build & Test
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -29,3 +39,5 @@ jobs:
 
       - name: Test
         run: dotnet test Tests/Tests.csproj --no-build --configuration Release --verbosity normal
+        env:
+          KUVOX_RUN_REDIS_INTEGRATION: "true"

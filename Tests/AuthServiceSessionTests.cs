@@ -8,6 +8,8 @@ using Kuvox.Api.Modules.Shared.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging.Abstractions;
+using Kuvox.Api.Modules.Shared.Infrastructure.Caching;
 using Xunit;
 
 namespace Tests;
@@ -181,6 +183,8 @@ public sealed class AuthServiceSessionTests
             RefreshTokenDays = 7,
         }));
 
+        var caching = new CachingOptions();
+        var cacheKeys = new CacheKeyFactory(caching);
         var service = new AuthService(
             repo,
             tokenService,
@@ -188,7 +192,14 @@ public sealed class AuthServiceSessionTests
             hasher,
             mediator: null!,
             emailSender: null!,
-            Options.Create(new FrontendOptions { BaseUrl = "http://localhost:5173" }));
+            Options.Create(new FrontendOptions { BaseUrl = "http://localhost:5173" }),
+            new BusinessCache(
+                new DisabledCacheStore(),
+                new JsonCacheCodec(new SystemCacheClock()),
+                Options.Create(caching),
+                NullLogger<BusinessCache>.Instance),
+            cacheKeys,
+            Options.Create(caching));
 
         return (service, repo, user);
     }

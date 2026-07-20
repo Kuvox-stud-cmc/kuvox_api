@@ -205,6 +205,11 @@ namespace Kuvox.Api.Modules.Media.Repositories.Migrations
                         .HasMaxLength(1024)
                         .HasColumnType("character varying(1024)");
 
+                    b.Property<long>("SearchRevision")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
+
                     b.Property<long>("SizeBytes")
                         .HasColumnType("bigint");
 

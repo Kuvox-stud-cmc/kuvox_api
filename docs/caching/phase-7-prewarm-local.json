@@ -1,0 +1,93 @@
+{
+  "captured_at": "2026-07-19T09:28:56.897013+00:00",
+  "cleanup": [
+    "temporary task label deleted",
+    "temporary Studio membership removed",
+    "temporary evidence user deleted"
+  ],
+  "fixture": {
+    "schema_version": 1
+  },
+  "mutation_prewarm": {
+    "authorized_reads": {
+      "item_counts": [
+        1,
+        1,
+        1,
+        0
+      ],
+      "metric_deltas": {
+        "kuvox_business_cache_operations_total{domain=\"studio\",operation=\"notification-settings\",outcome=\"hit\"}": 1.0,
+        "kuvox_business_cache_operations_total{domain=\"studio\",operation=\"workspace-settings\",outcome=\"hit\"}": 1.0,
+        "kuvox_business_cache_operations_total{domain=\"tasks\",operation=\"labels\",outcome=\"hit\"}": 1.0,
+        "kuvox_business_cache_operations_total{domain=\"tasks\",operation=\"milestones\",outcome=\"hit\"}": 1.0,
+        "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 16.0
+      },
+      "response_hashes": [
+        "d87d794f5c352566a43127ed6d29616b4f8e3db97c66c2fc37a0902003e63965",
+        "9eb86b17665b82d1333d121faf541e7621478b0e56a3d4dd12a564ccc514dfa2",
+        "1f307a2a835dfdefe9ab4324fd674f60c8b47241276d7949c0fe1d4f192a53e3",
+        "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      ],
+      "statuses": [
+        200
+      ]
+    },
+    "prewarm_metric_deltas": {
+      "kuvox_business_cache_operations_total{domain=\"studio\",operation=\"write\",outcome=\"success\"}": 2.0,
+      "kuvox_business_cache_operations_total{domain=\"tasks\",operation=\"write\",outcome=\"success\"}": 2.0,
+      "kuvox_cache_prewarm_operations_total{target=\"studio-settings\",outcome=\"queued\"}": 1.0,
+      "kuvox_cache_prewarm_operations_total{target=\"studio-settings\",outcome=\"success\"}": 1.0,
+      "kuvox_cache_prewarm_operations_total{target=\"task-references\",outcome=\"queued\"}": 1.0,
+      "kuvox_cache_prewarm_operations_total{target=\"task-references\",outcome=\"success\"}": 1.0,
+      "kuvox_postgres_commands_total{module=\"auth\",command_type=\"insert\"}": 1.0,
+      "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 10.0,
+      "kuvox_postgres_commands_total{module=\"tasks\",command_type=\"insert\"}": 1.0,
+      "kuvox_postgres_commands_total{module=\"tasks\",command_type=\"select\"}": 3.0
+    }
+  },
+  "startup_allowlist": {
+    "kuvox_cache_prewarm_operations_total{target=\"studio-settings\",outcome=\"queued\"}": 4.0,
+    "kuvox_cache_prewarm_operations_total{target=\"studio-settings\",outcome=\"success\"}": 4.0,
+    "kuvox_cache_prewarm_operations_total{target=\"task-references\",outcome=\"queued\"}": 3.0,
+    "kuvox_cache_prewarm_operations_total{target=\"task-references\",outcome=\"success\"}": 3.0
+  },
+  "startup_authorized_reads": {
+    "item_counts": [
+      1,
+      1,
+      0,
+      0
+    ],
+    "metric_deltas": {
+      "kuvox_business_cache_operations_total{domain=\"studio\",operation=\"notification-settings\",outcome=\"hit\"}": 1.0,
+      "kuvox_business_cache_operations_total{domain=\"studio\",operation=\"workspace-settings\",outcome=\"hit\"}": 1.0,
+      "kuvox_business_cache_operations_total{domain=\"tasks\",operation=\"labels\",outcome=\"hit\"}": 1.0,
+      "kuvox_business_cache_operations_total{domain=\"tasks\",operation=\"milestones\",outcome=\"hit\"}": 1.0,
+      "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 16.0
+    },
+    "response_hashes": [
+      "d87d794f5c352566a43127ed6d29616b4f8e3db97c66c2fc37a0902003e63965",
+      "9eb86b17665b82d1333d121faf541e7621478b0e56a3d4dd12a564ccc514dfa2",
+      "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    ],
+    "statuses": [
+      200
+    ]
+  },
+  "viewer_neutral_authorization": {
+    "authorized_metric_deltas": {
+      "kuvox_business_cache_operations_total{domain=\"studio\",operation=\"workspace-settings\",outcome=\"hit\"}": 1.0,
+      "kuvox_business_cache_operations_total{domain=\"tasks\",operation=\"labels\",outcome=\"hit\"}": 1.0,
+      "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 9.0
+    },
+    "authorized_statuses": [
+      200
+    ],
+    "revoked_statuses": [
+      403,
+      403
+    ]
+  }
+}

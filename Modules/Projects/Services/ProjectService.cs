@@ -2,11 +2,16 @@ using Kuvox.Api.Modules.Auth.Contracts;
 using Kuvox.Api.Modules.Media.Contracts;
 using Kuvox.Api.Modules.Notifications;
 using Kuvox.Api.Modules.Projects.Dtos;
+using Kuvox.Api.Modules.Projects.Contracts;
 using Kuvox.Api.Modules.Projects.Enums;
 using Kuvox.Api.Modules.Projects.Models;
 using Kuvox.Api.Modules.Projects.Repositories;
 using Kuvox.Api.Modules.Shared.Dtos;
 using Kuvox.Api.Modules.Shared.Infrastructure;
+using Kuvox.Api.Modules.Shared.Infrastructure.Caching;
+using Kuvox.Api.Modules.Timelines.Contracts;
+using MediatR;
+using Microsoft.Extensions.Options;
 using System.Text.Json;
 using MediaKind = Kuvox.Api.Modules.Media.Enums.MediaKind;
 using MediaOwnerKind = Kuvox.Api.Modules.Media.Enums.OwnerKind;
@@ -19,9 +24,21 @@ namespace Kuvox.Api.Modules.Projects.Services;
 /// <see cref="IProjectRepository"/>, resolves invitees through the Auth public contract
 /// (<see cref="IAuthApi"/>, Rule 2).
 /// </summary>
-internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth, INotificationsApi notifications, IMediaApi media)
+internal sealed class ProjectService(
+    IProjectRepository projects,
+    IAuthApi auth,
+    INotificationsApi notifications,
+    IMediaApi media,
+    BusinessCache cache,
+    CacheGenerationManager generations,
+    CacheKeyFactory cacheKeys,
+    IOptions<CachingOptions> cachingOptions,
+    EditorDocumentCache documentCache,
+    ITimelinesApi timelines,
+    IMediator mediator)
     : IProjectService
 {
+    private readonly ProjectCacheOptions _cacheOptions = cachingOptions.Value.Projects;
     /// <summary>Trash auto-purge window (kept in sync with <c>TrashPurgeService</c>).</summary>
     public static readonly TimeSpan TrashRetention = TimeSpan.FromDays(7);
 
@@ -29,64 +46,92 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
         WorkspaceScope scope, CallerContext caller, int page, int pageSize, CancellationToken cancellationToken = default)
     {
         (page, pageSize) = Normalize(page, pageSize);
-        var (items, total) = await projects.ListByWorkspaceAsync(OwnerKindOf(scope), scope.OwnerId, page, pageSize, cancellationToken);
-        if (scope.IsStudio && !caller.IsStudioOwner(scope.OwnerId))
+        await RequireWorkspaceAccessAsync(scope, caller, cancellationToken);
+        async Task<PagedResult<ProjectDto>> Load(CancellationToken ct)
         {
-            items = await FilterVisibleAsync(items, caller, cancellationToken);
-            total = items.Count;
+            var (items, total) = await projects.ListByWorkspaceAsync(OwnerKindOf(scope), scope.OwnerId, page, pageSize, ct);
+            if (scope.IsStudio && !caller.IsStudioOwner(scope.OwnerId))
+            {
+                items = await FilterVisibleAsync(items, caller, ct);
+                total = items.Count;
+            }
+            var flags = await projects.GetStarFlagsAsync(items.Select(project => project.Id), caller.UserId, ct);
+            var mediaCounts = await projects.GetMediaCountsAsync(items.Select(project => project.Id), ct);
+            return new PagedResult<ProjectDto>(
+                items.Select(project => ToDto(project, flags.GetValueOrDefault(project.Id), mediaCounts.GetValueOrDefault(project.Id))).ToList(),
+                page, pageSize, total);
         }
-        var flags = await projects.GetStarFlagsAsync(items.Select(project => project.Id), caller.UserId, cancellationToken);
-        var mediaCounts = await projects.GetMediaCountsAsync(items.Select(project => project.Id), cancellationToken);
-        return new PagedResult<ProjectDto>(
-            items.Select(project => ToDto(project, flags.GetValueOrDefault(project.Id), mediaCounts.GetValueOrDefault(project.Id))).ToList(),
-            page,
-            pageSize,
-            total);
+        return await GetProjectListCachedAsync(scope, caller.UserId, "workspace", page, pageSize, Load, cancellationToken);
     }
 
     public async Task<PagedResult<ProjectDto>> ListSharedWithMeAsync(
         Guid userId, int page, int pageSize, CancellationToken cancellationToken = default)
     {
         (page, pageSize) = Normalize(page, pageSize);
-        var (items, total) = await projects.ListSharedWithUserAsync(userId, page, pageSize, cancellationToken);
-        var flags = await projects.GetStarFlagsAsync(items.Select(item => item.Project.Id), userId, cancellationToken);
-        var mediaCounts = await projects.GetMediaCountsAsync(items.Select(item => item.Project.Id), cancellationToken);
-        var owners = await GetUserOwnerSummariesAsync(items.Select(item => item.Project), cancellationToken);
-        return new PagedResult<ProjectDto>(
-            items.Select(item => ToDto(
-                item.Project,
-                flags.GetValueOrDefault(item.Project.Id),
-                mediaCounts.GetValueOrDefault(item.Project.Id),
-                owners.GetValueOrDefault(item.Project.OwnerId))).ToList(),
-            page,
-            pageSize,
-            total);
+        async Task<PagedResult<ProjectDto>> Load(CancellationToken ct)
+        {
+            var (items, total) = await projects.ListSharedWithUserAsync(userId, page, pageSize, ct);
+            var flags = await projects.GetStarFlagsAsync(items.Select(item => item.Project.Id), userId, ct);
+            var mediaCounts = await projects.GetMediaCountsAsync(items.Select(item => item.Project.Id), ct);
+            var owners = await GetUserOwnerSummariesAsync(items.Select(item => item.Project), ct);
+            return new PagedResult<ProjectDto>(
+                items.Select(item => ToDto(item.Project, flags.GetValueOrDefault(item.Project.Id),
+                    mediaCounts.GetValueOrDefault(item.Project.Id), owners.GetValueOrDefault(item.Project.OwnerId))).ToList(),
+                page, pageSize, total);
+        }
+        return await GetSharedProjectsCachedAsync(userId, page, pageSize, Load, cancellationToken);
     }
 
     public async Task<PagedResult<ProjectTrashItemDto>> ListTrashAsync(
         WorkspaceScope scope, CallerContext caller, int page, int pageSize, CancellationToken cancellationToken = default)
     {
         (page, pageSize) = Normalize(page, pageSize);
-        var (items, total) = await projects.ListTrashAsync(OwnerKindOf(scope), scope.OwnerId, page, pageSize, cancellationToken);
-        if (scope.IsStudio && !caller.IsStudioOwner(scope.OwnerId))
+        await RequireWorkspaceAccessAsync(scope, caller, cancellationToken);
+        async Task<PagedResult<ProjectTrashItemDto>> Load(CancellationToken ct)
         {
-            items = await FilterVisibleAsync(items, caller, cancellationToken);
-            total = items.Count;
+            var (items, total) = await projects.ListTrashAsync(OwnerKindOf(scope), scope.OwnerId, page, pageSize, ct);
+            if (scope.IsStudio && !caller.IsStudioOwner(scope.OwnerId))
+            {
+                items = await FilterVisibleAsync(items, caller, ct);
+                total = items.Count;
+            }
+            return new PagedResult<ProjectTrashItemDto>(items.Select(ToTrashDto).ToList(), page, pageSize, total);
         }
-        return new PagedResult<ProjectTrashItemDto>(items.Select(ToTrashDto).ToList(), page, pageSize, total);
+        return await GetProjectListCachedAsync(scope, caller.UserId, "trash", page, pageSize, Load, cancellationToken);
     }
 
     public async Task<ProjectDto> GetAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default)
     {
         var project = await LoadLiveAsync(id, cancellationToken);
+        await EnsurePersistedStudioMembershipAsync(project, caller, cancellationToken);
         if (!await CanAccessAsync(project, caller, cancellationToken))
         {
             throw DomainException.Forbidden("You do not have access to this project.");
         }
 
-        var projectUser = await projects.GetProjectUserAsync(project.Id, caller.UserId, cancellationToken);
-        var mediaCount = await GetMediaCountAsync(project.Id, cancellationToken);
-        return ToDto(project, projectUser?.IsStarred ?? false, mediaCount);
+        return await GetAuthorizedProjectAsync(project, caller, cancellationToken);
+    }
+
+    private async Task<ProjectDto> GetAuthorizedProjectAsync(
+        Project project,
+        CallerContext caller,
+        CancellationToken cancellationToken)
+    {
+        var generation = await GetProjectGenerationAsync(project.Id, cancellationToken);
+        var mediaGeneration = cache.IsEnabled(_cacheOptions)
+            ? await generations.GetAsync("media-projection", "global", cancellationToken)
+            : null;
+        async Task<ProjectDto> Load(CancellationToken ct)
+        {
+            var projectUser = await projects.GetProjectUserAsync(project.Id, caller.UserId, ct);
+            var mediaCount = await GetMediaCountAsync(project.Id, ct);
+            return ToDto(project, projectUser?.IsStarred ?? false, mediaCount);
+        }
+        if (generation is null || mediaGeneration is null) return await Load(cancellationToken);
+        var key = BusinessCacheKey.Create(cacheKeys, "project-detail", "project", project.Id, "viewer", caller.UserId,
+            "gen", generation, "media-gen", mediaGeneration);
+        return await cache.GetOrCreateAsync("projects", "detail", _cacheOptions, key,
+            TimeSpan.FromSeconds(_cacheOptions.DetailTtlSeconds), Load, cancellationToken);
     }
 
     public async Task<PagedResult<ProjectMediaDto>> ListMediaAsync(
@@ -98,22 +143,47 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
     {
         (page, pageSize) = Normalize(page, pageSize);
         var project = await LoadLiveAsync(id, cancellationToken);
+        await EnsurePersistedStudioMembershipAsync(project, caller, cancellationToken);
         if (!await CanAccessAsync(project, caller, cancellationToken))
         {
             throw DomainException.Forbidden("You do not have access to this project.");
         }
 
-        var (rows, total) = await projects.ListProjectMediaAsync(project.Id, page, pageSize, cancellationToken);
-        var resolved = await media.ResolveAsync(rows.Select(row => row.MediaId).ToArray(), caller, cancellationToken);
-        var resolvedById = resolved.ToDictionary(item => item.MediaId);
-        var items = rows.Select(row =>
-        {
-            var resolution = resolvedById.GetValueOrDefault(row.MediaId)
-                ?? new MediaResolution(row.MediaId, row.Kind, MediaResolutionAvailability.Missing, null);
-            return ToProjectMediaDto(resolution, row.Kind);
-        }).ToList();
+        return await ListAuthorizedMediaAsync(project, caller, page, pageSize, cancellationToken);
+    }
 
-        return new PagedResult<ProjectMediaDto>(items, page, pageSize, total);
+    private async Task<PagedResult<ProjectMediaDto>> ListAuthorizedMediaAsync(
+        Project project,
+        CallerContext caller,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        async Task<PagedResult<ProjectMediaDto>> Load(CancellationToken ct)
+        {
+            var (rows, total) = await projects.ListProjectMediaAsync(project.Id, page, pageSize, ct);
+            var resolved = await media.ResolveAsync(rows.Select(row => row.MediaId).ToArray(), caller, ct);
+            var resolvedById = resolved.ToDictionary(item => item.MediaId);
+            var items = rows.Select(row =>
+            {
+                var resolution = resolvedById.GetValueOrDefault(row.MediaId)
+                    ?? new MediaResolution(row.MediaId, row.Kind, MediaResolutionAvailability.Missing, null);
+                return ToProjectMediaDto(resolution, row.Kind);
+            }).ToList();
+            return new PagedResult<ProjectMediaDto>(items, page, pageSize, total);
+        }
+        var generation = await GetProjectGenerationAsync(project.Id, cancellationToken);
+        var mediaGeneration = cache.IsEnabled(_cacheOptions)
+            ? await generations.GetAsync("media-projection", "global", cancellationToken)
+            : null;
+        if (generation is null || mediaGeneration is null) return await Load(cancellationToken);
+        var key = BusinessCacheKey.Create(cacheKeys, "project-media", "project", project.Id, "viewer", caller.UserId,
+            "page", page, "size", pageSize, "gen", generation, "media-gen", mediaGeneration);
+        return await cache.GetOrCreateAsync("projects", "media", _cacheOptions, key,
+            TimeSpan.FromSeconds(_cacheOptions.MediaTtlSeconds), Load, cancellationToken,
+            result => result.Items.All(item => item.Status is null
+                || string.Equals(item.Status, "Ready", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(item.Status, "Failed", StringComparison.OrdinalIgnoreCase)));
     }
 
     public async Task<IReadOnlyList<ProjectMediaDto>> AttachMediaAsync(
@@ -173,6 +243,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
 
         project.UpdatedAt = DateTimeOffset.UtcNow;
         await projects.SaveChangesAsync(cancellationToken);
+        await InvalidateProjectAsync(project);
 
         return resolved.Select(item => ToProjectMediaDto(item, item.Kind ?? MediaKind.Video)).ToList();
     }
@@ -185,10 +256,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
         var project = await LoadLiveAsync(id, cancellationToken);
         await RequireImageProjectReadAsync(project, caller, cancellationToken);
 
-        var composition = await projects.GetImageCompositionAsync(project.Id, cancellationToken);
-        return composition is null
-            ? new ImageCompositionDto(project.Id, null, 0, null, null)
-            : ToImageCompositionDto(composition);
+        return await GetAuthorizedImageCompositionAsync(project, cancellationToken);
     }
 
     public async Task<ImageCompositionDto> SaveImageCompositionAsync(
@@ -246,7 +314,91 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
 
         project.UpdatedAt = now;
         await projects.SaveChangesAsync(cancellationToken);
-        return ToImageCompositionDto(composition);
+        await InvalidateProjectAsync(project);
+        var result = ToImageCompositionDto(composition);
+        await documentCache.WriteImageCompositionAsync(project.Id, composition.RevisionNumber, result);
+        return result;
+    }
+
+    public async Task<ProjectEditorBootstrapDto> GetEditorBootstrapAsync(
+        Guid id,
+        CallerContext caller,
+        int mediaPage,
+        int mediaPageSize,
+        CancellationToken cancellationToken = default)
+    {
+        (mediaPage, mediaPageSize) = Normalize(mediaPage, mediaPageSize);
+        var project = await LoadLiveAsync(id, cancellationToken);
+        await EnsurePersistedStudioMembershipAsync(project, caller, cancellationToken);
+        if (!await CanAccessAsync(project, caller, cancellationToken))
+        {
+            throw DomainException.Forbidden("You do not have access to this project.");
+        }
+
+        var projectDto = await GetAuthorizedProjectAsync(project, caller, cancellationToken);
+        var projectMedia = await ListAuthorizedMediaAsync(project, caller, mediaPage, mediaPageSize, cancellationToken);
+        if (project.Kind == ProjectKind.Video)
+        {
+            var snapshot = await timelines.GetAuthorizedProjectSnapshotAsync(ToDocumentAccess(project), cancellationToken);
+            return new ProjectEditorBootstrapDto(
+                projectDto,
+                projectMedia,
+                snapshot is null ? null : new EditorBootstrapTimelineDto(
+                    snapshot.ProjectId,
+                    snapshot.TimelineId,
+                    snapshot.RevisionId,
+                    snapshot.DocumentJson,
+                    snapshot.RevisionNumber,
+                    snapshot.DocumentSchemaVersion,
+                    snapshot.Source,
+                    snapshot.Label,
+                    snapshot.UpdatedAt,
+                    snapshot.UpdatedByUserId),
+                null);
+        }
+
+        var composition = await GetAuthorizedImageCompositionAsync(project, cancellationToken);
+        return new ProjectEditorBootstrapDto(
+            projectDto,
+            projectMedia,
+            null,
+            composition);
+    }
+
+    private async Task<ImageCompositionDto> GetAuthorizedImageCompositionAsync(
+        Project project,
+        CancellationToken cancellationToken)
+    {
+        if (!documentCache.DocumentsEnabled)
+        {
+            var current = await projects.GetImageCompositionAsync(project.Id, cancellationToken);
+            return current is null
+                ? new ImageCompositionDto(project.Id, null, 0, null, null)
+                : ToImageCompositionDto(current);
+        }
+
+        var identity = await projects.GetImageCompositionIdentityAsync(project.Id, cancellationToken);
+        if (identity is null || identity.RevisionNumber == 0)
+        {
+            return new ImageCompositionDto(project.Id, null, 0, null, null);
+        }
+
+        return await documentCache.GetImageCompositionAsync(
+            project.Id,
+            identity.RevisionNumber,
+            async ct =>
+            {
+                var revision = await projects.GetImageCompositionRevisionAsync(project.Id, identity.RevisionNumber, ct);
+                if (revision is not null)
+                {
+                    return ToImageCompositionDto(revision);
+                }
+
+                var current = await projects.GetImageCompositionAsync(project.Id, ct)
+                    ?? throw DomainException.NotFound("Image composition not found.");
+                return ToImageCompositionDto(current);
+            },
+            cancellationToken);
     }
 
     public async Task<ProjectDto> CreateAsync(
@@ -275,6 +427,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
 
         await projects.AddAsync(project, cancellationToken);
         await projects.SaveChangesAsync(cancellationToken);
+        await InvalidateProjectAsync(project);
 
         return ToDto(project);
     }
@@ -290,6 +443,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
         project.Status = request.Status;
         project.UpdatedAt = DateTimeOffset.UtcNow;
         await projects.SaveChangesAsync(cancellationToken);
+        await InvalidateProjectAsync(project, summaryChanged: true);
 
         var projectUser = await projects.GetProjectUserAsync(project.Id, caller.UserId, cancellationToken);
         var mediaCount = await GetMediaCountAsync(project.Id, cancellationToken);
@@ -317,6 +471,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
                 projectUser.IsStarred = true;
                 await projects.AddProjectUserAsync(projectUser, cancellationToken);
                 await projects.SaveChangesAsync(cancellationToken);
+                await InvalidateProjectAsync(project);
             }
 
             var mediaCount = await GetMediaCountAsync(project.Id, cancellationToken);
@@ -328,6 +483,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
             projectUser.IsStarred = request.IsStarred;
             projectUser.UpdatedAt = DateTimeOffset.UtcNow;
             await projects.SaveChangesAsync(cancellationToken);
+            await InvalidateProjectAsync(project);
         }
 
         var updatedMediaCount = await GetMediaCountAsync(project.Id, cancellationToken);
@@ -366,6 +522,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
         }
 
         await projects.SaveChangesAsync(cancellationToken);
+        await InvalidateProjectAsync(project);
         await notifications.CreateAsync(
             invitee.Id,
             null,
@@ -385,6 +542,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
         {
             projects.RemoveProjectUser(share);
             await projects.SaveChangesAsync(cancellationToken);
+            await InvalidateProjectAsync(project);
         }
     }
 
@@ -431,6 +589,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
         }
 
         await projects.SaveChangesAsync(cancellationToken);
+        await InvalidateProjectAsync(project);
         return await BuildAccessRowsAsync(project, caller, cancellationToken);
     }
 
@@ -442,6 +601,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
         project.DeletedAt = DateTimeOffset.UtcNow;
         project.UpdatedAt = DateTimeOffset.UtcNow;
         await projects.SaveChangesAsync(cancellationToken);
+        await InvalidateProjectAsync(project, summaryChanged: true);
     }
 
     public async Task RestoreAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default)
@@ -453,6 +613,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
         project.DeletedAt = null;
         project.UpdatedAt = DateTimeOffset.UtcNow;
         await projects.SaveChangesAsync(cancellationToken);
+        await InvalidateProjectAsync(project, summaryChanged: true);
     }
 
     public async Task PermanentDeleteAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default)
@@ -463,6 +624,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
 
         projects.Remove(project);
         await projects.SaveChangesAsync(cancellationToken);
+        await InvalidateProjectAsync(project, summaryChanged: true);
     }
 
     private async Task<Project> LoadLiveAsync(Guid id, CancellationToken cancellationToken)
@@ -471,6 +633,103 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
         return project is null || project.DeletedAt is not null
             ? throw DomainException.NotFound("Project not found.")
             : project;
+    }
+
+    private async Task RequireWorkspaceAccessAsync(
+        WorkspaceScope scope,
+        CallerContext caller,
+        CancellationToken cancellationToken)
+    {
+        if (!scope.IsStudio)
+        {
+            if (!caller.OwnsAsUser(scope.OwnerId))
+            {
+                throw DomainException.Forbidden("You do not have access to this workspace.");
+            }
+            return;
+        }
+
+        if (await auth.GetStudioMemberAsync(scope.OwnerId, caller.UserId, cancellationToken) is null)
+        {
+            throw DomainException.Forbidden("You are not a member of this studio.");
+        }
+    }
+
+    private async Task EnsurePersistedStudioMembershipAsync(
+        Project project,
+        CallerContext caller,
+        CancellationToken cancellationToken)
+    {
+        if (project.OwnerKind == OwnerKind.Studio
+            && await auth.GetStudioMemberAsync(project.OwnerId, caller.UserId, cancellationToken) is null)
+        {
+            throw DomainException.Forbidden("You are not a member of this studio.");
+        }
+    }
+
+    private Task<string?> GetProjectGenerationAsync(Guid projectId, CancellationToken cancellationToken) =>
+        cache.IsEnabled(_cacheOptions)
+            ? generations.GetAsync("projects", $"project-{projectId:N}", cancellationToken)
+            : Task.FromResult<string?>(null);
+
+    private async Task<PagedResult<T>> GetProjectListCachedAsync<T>(
+        WorkspaceScope scope,
+        Guid viewerId,
+        string kind,
+        int page,
+        int pageSize,
+        Func<CancellationToken, Task<PagedResult<T>>> factory,
+        CancellationToken cancellationToken)
+    {
+        if (!cache.IsEnabled(_cacheOptions)) return await factory(cancellationToken);
+        var generation = await generations.GetAsync(
+            "projects", $"owner-{OwnerKindOf(scope)}-{scope.OwnerId:N}", cancellationToken);
+        var mediaGeneration = await generations.GetAsync("media-projection", "global", cancellationToken);
+        if (generation is null || mediaGeneration is null) return await factory(cancellationToken);
+        var key = BusinessCacheKey.Create(
+            cacheKeys, "project-list", "owner", OwnerKindOf(scope), scope.OwnerId,
+            "viewer", viewerId, "kind", kind, "page", page, "size", pageSize,
+            "filter", BusinessCacheKey.Hash("sort-updated-desc"), "gen", generation, "media-gen", mediaGeneration);
+        return await cache.GetOrCreateAsync(
+            "projects", kind, _cacheOptions, key, TimeSpan.FromSeconds(_cacheOptions.ListTtlSeconds), factory, cancellationToken);
+    }
+
+    private async Task<PagedResult<ProjectDto>> GetSharedProjectsCachedAsync(
+        Guid viewerId,
+        int page,
+        int pageSize,
+        Func<CancellationToken, Task<PagedResult<ProjectDto>>> factory,
+        CancellationToken cancellationToken)
+    {
+        if (!cache.IsEnabled(_cacheOptions)) return await factory(cancellationToken);
+        var generation = await generations.GetAsync("projects", "shared-global", cancellationToken);
+        var mediaGeneration = await generations.GetAsync("media-projection", "global", cancellationToken);
+        if (generation is null || mediaGeneration is null) return await factory(cancellationToken);
+        var key = BusinessCacheKey.Create(
+            cacheKeys, "project-list", "owner", "shared", viewerId, "viewer", viewerId,
+            "kind", "shared", "page", page, "size", pageSize,
+            "filter", BusinessCacheKey.Hash("sort-updated-desc"), "gen", generation, "media-gen", mediaGeneration);
+        return await cache.GetOrCreateAsync(
+            "projects", "shared", _cacheOptions, key, TimeSpan.FromSeconds(_cacheOptions.ListTtlSeconds), factory, cancellationToken);
+    }
+
+    private async Task InvalidateProjectAsync(Project project, bool summaryChanged = false)
+    {
+        if (cache.IsEnabled(_cacheOptions))
+        {
+            _ = await generations.BumpAsync("projects", $"project-{project.Id:N}");
+            _ = await generations.BumpAsync("projects", $"owner-{project.OwnerKind}-{project.OwnerId:N}");
+            _ = await generations.BumpAsync("projects", "shared-global");
+        }
+        if (project.OwnerKind == OwnerKind.Studio && cache.IsEnabled(cachingOptions.Value.StorageUsage))
+        {
+            _ = await generations.BumpAsync("storage-usage", $"owner-Studio-{project.OwnerId:N}");
+        }
+
+        if (summaryChanged && project.OwnerKind == OwnerKind.Studio)
+        {
+            await mediator.Publish(new ProjectSummaryChangedEvent(project.OwnerId));
+        }
     }
 
     private static bool CanRead(Project project, CallerContext caller) =>
@@ -519,6 +778,8 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
             throw DomainException.BadRequest("Image compositions are only available for image projects.");
         }
 
+        await EnsurePersistedStudioMembershipAsync(project, caller, cancellationToken);
+
         if (!await CanAccessAsync(project, caller, cancellationToken))
         {
             throw DomainException.Forbidden("You do not have access to this project.");
@@ -532,6 +793,7 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
             throw DomainException.BadRequest("Image compositions are only available for image projects.");
         }
 
+        await EnsurePersistedStudioMembershipAsync(project, caller, cancellationToken);
         await RequireWriteAsync(project, caller, cancellationToken);
     }
 
@@ -769,7 +1031,8 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
             IsLiveAccessible(resolution) ? summary?.Height : null,
             IsLiveAccessible(resolution) ? summary?.Codec : null,
             IsLiveAccessible(resolution) ? summary?.FrameRate : null,
-            IsLiveAccessible(resolution) ? summary?.CreatedAt : null);
+            IsLiveAccessible(resolution) ? summary?.CreatedAt : null,
+            IsLiveAccessible(resolution) ? summary?.SearchRevision : null);
     }
 
     private static bool IsLiveAccessible(MediaResolution resolution) =>
@@ -803,4 +1066,19 @@ internal sealed class ProjectService(IProjectRepository projects, IAuthApi auth,
             composition.RevisionNumber,
             composition.UpdatedAt,
             composition.UpdatedByUserId);
+
+    private static ImageCompositionDto ToImageCompositionDto(ImageCompositionRevision revision) =>
+        new(
+            revision.ProjectId,
+            JsonSerializer.Deserialize<JsonElement>(revision.DocumentJson),
+            revision.RevisionNumber,
+            revision.CreatedAt,
+            revision.CreatedByUserId);
+
+    private static ProjectDocumentAccess ToDocumentAccess(Project project) =>
+        new(
+            project.Id,
+            project.Kind == ProjectKind.Image ? ProjectContentKind.Image : ProjectContentKind.Video,
+            project.Name,
+            project.UpdatedAt);
 }

@@ -30,6 +30,12 @@ public abstract class Media : BaseEntity
     public required MediaStatus Status { get; set; }
 
     /// <summary>
+    /// Monotonic revision of the authoritative searchable indexes for this media item.
+    /// Zero means no accepted searchable ingestion has completed yet.
+    /// </summary>
+    public long SearchRevision { get; set; }
+
+    /// <summary>
     /// Error message from the uploaded and ingestion pipeline, if any. Null if <see cref="Status"/> is not "failed".
     /// </summary>
     public string? ErrorMessage { get; set; }

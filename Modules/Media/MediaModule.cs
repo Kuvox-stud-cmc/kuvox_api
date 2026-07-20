@@ -4,6 +4,7 @@ using Kuvox.Api.Modules.Media.Contracts;
 using Kuvox.Api.Modules.Media.Repositories;
 using Kuvox.Api.Modules.Media.Services;
 using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
+using Kuvox.Api.Modules.Shared.Infrastructure.Metrics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -13,10 +14,13 @@ public static class MediaModule
 {
     public static IServiceCollection AddMediaModule(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddDbContext<MediaDbContext>(options =>
+        services.AddDbContext<MediaDbContext>((sp, options) =>
+        {
             options.UseNpgsql(
                 configuration.GetConnectionString("Postgres"),
-                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", MediaDbContext.Schema)));
+                npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", MediaDbContext.Schema));
+            options.AddInterceptors(sp.GetRequiredService<DatabaseCommandMetricsInterceptor>());
+        });
 
         services.AddOptions<StorageOptions>()
             .Bind(configuration.GetSection(StorageOptions.SectionName))
@@ -28,6 +32,7 @@ public static class MediaModule
             .Validate(options => options.PollIntervalSeconds > 0, "MediaPipelineRecovery:PollIntervalSeconds must be positive.")
             .Validate(options => options.BatchSize > 0, "MediaPipelineRecovery:BatchSize must be positive.")
             .ValidateOnStart();
+        services.AddSingleton(Options.Create(MediaFeatureOptions.FromConfiguration(configuration)));
 
         services.AddSingleton<IAmazonS3>(sp =>
         {

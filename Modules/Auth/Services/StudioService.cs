@@ -8,6 +8,7 @@ using Kuvox.Api.Modules.Notifications;
 using Kuvox.Api.Modules.Projects.Contracts;
 using Kuvox.Api.Modules.Shared.Dtos;
 using Kuvox.Api.Modules.Shared.Infrastructure;
+using Kuvox.Api.Modules.Shared.Infrastructure.Caching;
 using Kuvox.Api.Modules.Shared.Infrastructure.Email;
 using Microsoft.Extensions.Options;
 
@@ -26,10 +27,16 @@ internal sealed class StudioService(
     INotificationsApi notifications,
     IMediaApi media,
     IProjectsApi projects,
-    MediatR.IMediator mediator) : IStudioService
+    MediatR.IMediator mediator,
+    BusinessCache cache,
+    CacheGenerationManager generations,
+    CacheKeyFactory cacheKeys,
+    IOptions<CachingOptions> cachingOptions,
+    CachePrewarmQueue prewarmQueue) : IStudioService
 {
     private const long DefaultStorageQuota = 500L * 1024L * 1024L * 1024L;
     private readonly string _frontendBaseUrl = frontendOptions.Value.BaseUrl.TrimEnd('/');
+    private readonly CachingOptions _caching = cachingOptions.Value;
     public async Task<IReadOnlyList<StudioDto>> ListMineAsync(Guid callerUserId, CancellationToken cancellationToken = default)
     {
         var rows = await studios.ListForUserAsync(callerUserId, cancellationToken);
@@ -51,11 +58,12 @@ internal sealed class StudioService(
             cancellationToken);
         await AuditAsync(studio.Id, callerUserId, StudioAuditCategory.Workspace, "studio.created", "Studio", studio.Id, $"Created studio {studio.Name}.", cancellationToken);
         await studios.SaveChangesAsync(cancellationToken);
+        await InvalidateStudioAsync(studio.Id);
 
         return new StudioDto(studio.Id, studio.Name, UserStudioRole.Owner);
     }
 
-    public async Task<StudioDto> RenameAsync(Guid studioID, Guid callerUserID, RenameStudioRequest request, CancellationToken cancellationToken = default) 
+    public async Task<StudioDto> RenameAsync(Guid studioID, Guid callerUserID, RenameStudioRequest request, CancellationToken cancellationToken = default)
     {
         await RequireAdminAsync(studioID, callerUserID, cancellationToken);
         var newName = request.Name.Trim();
@@ -68,16 +76,19 @@ internal sealed class StudioService(
         await studios.SaveChangesAsync(cancellationToken);
 
         var membership = await studios.GetMembershipAsync(studioID, callerUserID, cancellationToken);
+        await InvalidateStudioAsync(studioID);
         return new StudioDto(studio.Id, studio.Name, NormalizeRole(membership?.Role ?? UserStudioRole.Admin));
     }
 
-    public async Task DeleteAsync(Guid studioId, Guid callerUserId, CancellationToken cancellationToken = default) {
+    public async Task DeleteAsync(Guid studioId, Guid callerUserId, CancellationToken cancellationToken = default)
+    {
         await RequireAdminAsync(studioId, callerUserId, cancellationToken);
         var studio = await studios.GetByIdAsync(studioId, cancellationToken) ?? throw DomainException.NotFound("Studio not found");
 
         await AuditAsync(studioId, callerUserId, StudioAuditCategory.Workspace, "studio.deleted", "Studio", studio.Id, $"Deleted studio {studio.Name}.", cancellationToken);
         studios.RemoveStudio(studio);
         await studios.SaveChangesAsync(cancellationToken);
+        await InvalidateStudioAsync(studioId, enqueuePrewarm: false);
         await mediator.Publish(new StudioDeletedEvent(studioId), cancellationToken);
     }
 
@@ -116,6 +127,7 @@ internal sealed class StudioService(
 
         await AuditAsync(studioId, callerUserId, StudioAuditCategory.Members, "member.added", "User", invitee.Id, $"Added {invitee.Email} as {role}.", cancellationToken);
         await studios.SaveChangesAsync(cancellationToken);
+        await PublishMembershipChangedAsync(studioId, invitee.Id, cancellationToken);
         await notifications.CreateAsync(invitee.Id, studioId, "MemberJoined", "You were added to a Studio.", $"/teams/{studioId}", cancellationToken);
         return new StudioMemberDto(invitee.Id, invitee.Email, invitee.DisplayName, role);
     }
@@ -146,6 +158,7 @@ internal sealed class StudioService(
         membership.UpdatedAt = DateTimeOffset.UtcNow;
         await AuditAsync(studioId, callerUserId, StudioAuditCategory.Members, "member.role_changed", "User", targetUserId, $"Changed member role to {role}.", cancellationToken);
         await studios.SaveChangesAsync(cancellationToken);
+        await PublishMembershipChangedAsync(studioId, targetUserId, cancellationToken);
 
         var user = await users.GetByIdAsync(targetUserId, cancellationToken);
         await notifications.CreateAsync(targetUserId, studioId, "RoleChanged", $"Your Studio role changed to {role}.", $"/teams/{studioId}/members", cancellationToken);
@@ -173,6 +186,7 @@ internal sealed class StudioService(
         studios.RemoveMembership(membership);
         await AuditAsync(studioId, callerUserId, StudioAuditCategory.Members, "member.removed", "User", targetUserId, "Removed a studio member.", cancellationToken);
         await studios.SaveChangesAsync(cancellationToken);
+        await PublishMembershipChangedAsync(studioId, targetUserId, cancellationToken);
         await notifications.CreateAsync(targetUserId, studioId, "MemberRemoved", "You were removed from a Studio.", null, cancellationToken);
     }
 
@@ -330,6 +344,10 @@ internal sealed class StudioService(
         if (accepted > 0)
         {
             await studios.SaveChangesAsync(cancellationToken);
+            foreach (var invitation in invitations)
+            {
+                await PublishMembershipChangedAsync(invitation.StudioId, userId, cancellationToken);
+            }
         }
 
         return accepted;
@@ -338,13 +356,17 @@ internal sealed class StudioService(
     public async Task<IReadOnlyList<StudioRoleDto>> GetRolesAsync(Guid studioId, Guid callerUserId, CancellationToken cancellationToken = default)
     {
         await RequireMembershipAsync(studioId, callerUserId, cancellationToken);
-        return RoleMatrix;
+        return await GetStudioCachedAsync(
+            studioId, "roles", _caching.Studio.ReferencesTtlSeconds,
+            _ => Task.FromResult(RoleMatrix), cancellationToken);
     }
 
     public async Task<IReadOnlyList<StudioPermissionDto>> GetPermissionsAsync(Guid studioId, Guid callerUserId, CancellationToken cancellationToken = default)
     {
         await RequireMembershipAsync(studioId, callerUserId, cancellationToken);
-        return PermissionMatrix;
+        return await GetStudioCachedAsync(
+            studioId, "permissions", _caching.Studio.ReferencesTtlSeconds,
+            _ => Task.FromResult(PermissionMatrix), cancellationToken);
     }
 
     public async Task<PagedResult<StudioAuditLogEntryDto>> GetAuditLogAsync(
@@ -364,8 +386,13 @@ internal sealed class StudioService(
     public async Task<StudioWorkspaceSettingsDto> GetWorkspaceSettingsAsync(Guid studioId, Guid callerUserId, CancellationToken cancellationToken = default)
     {
         await RequireMembershipAsync(studioId, callerUserId, cancellationToken);
-        var studio = await studios.GetByIdAsync(studioId, cancellationToken) ?? throw DomainException.NotFound("Studio not found.");
-        return ToWorkspaceSettingsDto(studio);
+        return await GetStudioCachedAsync(
+            studioId, "workspace-settings", _caching.Studio.SettingsTtlSeconds,
+            async ct =>
+            {
+                var studio = await studios.GetByIdAsync(studioId, ct) ?? throw DomainException.NotFound("Studio not found.");
+                return ToWorkspaceSettingsDto(studio);
+            }, cancellationToken);
     }
 
     public async Task<StudioWorkspaceSettingsDto> UpdateWorkspaceSettingsAsync(
@@ -389,14 +416,20 @@ internal sealed class StudioService(
         studio.UpdatedAt = DateTimeOffset.UtcNow;
         await AuditAsync(studioId, callerUserId, StudioAuditCategory.Settings, "settings.workspace_updated", "Studio", studioId, "Updated studio workspace settings.", cancellationToken);
         await studios.SaveChangesAsync(cancellationToken);
+        await InvalidateStudioAsync(studioId);
         return ToWorkspaceSettingsDto(studio);
     }
 
     public async Task<StudioNotificationSettingsDto> GetNotificationSettingsAsync(Guid studioId, Guid callerUserId, CancellationToken cancellationToken = default)
     {
         await RequireAdminAsync(studioId, callerUserId, cancellationToken);
-        var studio = await studios.GetByIdAsync(studioId, cancellationToken) ?? throw DomainException.NotFound("Studio not found.");
-        return new StudioNotificationSettingsDto(studio.NotifyOnInvites, studio.NotifyOnMembers, studio.NotifyOnProjects, studio.NotifyOnMedia);
+        return await GetStudioCachedAsync(
+            studioId, "notification-settings", _caching.Studio.SettingsTtlSeconds,
+            async ct =>
+            {
+                var studio = await studios.GetByIdAsync(studioId, ct) ?? throw DomainException.NotFound("Studio not found.");
+                return new StudioNotificationSettingsDto(studio.NotifyOnInvites, studio.NotifyOnMembers, studio.NotifyOnProjects, studio.NotifyOnMedia);
+            }, cancellationToken);
     }
 
     public async Task<StudioNotificationSettingsDto> UpdateNotificationSettingsAsync(
@@ -414,28 +447,31 @@ internal sealed class StudioService(
         studio.UpdatedAt = DateTimeOffset.UtcNow;
         await AuditAsync(studioId, callerUserId, StudioAuditCategory.Settings, "settings.notifications_updated", "Studio", studioId, "Updated studio notification settings.", cancellationToken);
         await studios.SaveChangesAsync(cancellationToken);
+        await InvalidateStudioAsync(studioId);
         return new StudioNotificationSettingsDto(studio.NotifyOnInvites, studio.NotifyOnMembers, studio.NotifyOnProjects, studio.NotifyOnMedia);
     }
 
     public async Task<StudioUsageSummaryDto> GetUsageSummaryAsync(Guid studioId, Guid callerUserId, CancellationToken cancellationToken = default)
     {
         await RequireAdminAsync(studioId, callerUserId, cancellationToken);
-        var memberCount = await studios.CountMembersAsync(studioId, cancellationToken);
-        var projectCount = await projects.CountByWorkspaceAsync(
-            studioId,
-            Modules.Projects.Contracts.ProjectOwnerKind.Studio,
-            cancellationToken);
-        var mediaUsage = await media.GetWorkspaceUsageAsync(
-            studioId,
-            Modules.Media.Enums.OwnerKind.Studio,
-            cancellationToken);
-
-        return new StudioUsageSummaryDto(
-            memberCount,
-            projectCount,
-            mediaUsage.MediaCount,
-            mediaUsage.StorageBytesUsed,
-            DefaultStorageQuota);
+        async Task<StudioUsageSummaryDto> Load(CancellationToken ct)
+        {
+            var memberCount = await studios.CountMembersAsync(studioId, ct);
+            var projectCount = await projects.CountByWorkspaceAsync(
+                studioId, Modules.Projects.Contracts.ProjectOwnerKind.Studio, ct);
+            var mediaUsage = await media.GetWorkspaceUsageAsync(
+                studioId, Modules.Media.Enums.OwnerKind.Studio, ct);
+            return new StudioUsageSummaryDto(memberCount, projectCount, mediaUsage.MediaCount,
+                mediaUsage.StorageBytesUsed, DefaultStorageQuota);
+        }
+        if (!cache.IsEnabled(_caching.StorageUsage)) return await Load(cancellationToken);
+        var generation = await generations.GetAsync("storage-usage", $"owner-Studio-{studioId:N}", cancellationToken);
+        if (generation is null) return await Load(cancellationToken);
+        var key = BusinessCacheKey.Create(cacheKeys, "studio-usage-v2", "studio", studioId,
+            "gen", generation);
+        return await cache.GetOrCreateAsync("storage-usage", "studio-aggregate", _caching.StorageUsage, key,
+            TimeSpan.FromSeconds(_caching.StorageUsage.TtlSeconds), Load, cancellationToken,
+            useSingleFlight: _caching.StudioUsageSingleFlightEnabled);
     }
 
     private async Task<UserStudio> RequireMembershipAsync(Guid studioId, Guid callerUserId, CancellationToken cancellationToken)
@@ -447,6 +483,59 @@ internal sealed class StudioService(
 
         return await studios.GetMembershipAsync(studioId, callerUserId, cancellationToken)
             ?? throw DomainException.Forbidden("You are not a member of this studio.");
+    }
+
+    private async Task<T> GetStudioCachedAsync<T>(
+        Guid studioId,
+        string kind,
+        int ttlSeconds,
+        Func<CancellationToken, Task<T>> factory,
+        CancellationToken cancellationToken)
+    {
+        if (!cache.IsEnabled(_caching.Studio))
+        {
+            return await factory(cancellationToken);
+        }
+
+        var generation = await generations.GetAsync("studio", $"studio-{studioId:N}", cancellationToken);
+        if (generation is null)
+        {
+            return await factory(cancellationToken);
+        }
+
+        var key = BusinessCacheKey.Create(
+            cacheKeys, "studio-v2", kind, "studio", studioId, "gen", generation);
+        return await cache.GetOrCreateAsync(
+            "studio", kind, _caching.Studio, key, TimeSpan.FromSeconds(ttlSeconds), factory, cancellationToken);
+    }
+
+    private async Task InvalidateStudioAsync(Guid studioId, bool enqueuePrewarm = true)
+    {
+        if (cache.IsEnabled(_caching.Studio))
+        {
+            if (await generations.BumpAsync("studio", $"studio-{studioId:N}"))
+            {
+                var generation = await generations.GetAsync("studio", $"studio-{studioId:N}");
+                if (enqueuePrewarm && generation is not null)
+                {
+                    prewarmQueue.TryQueue(new CachePrewarmRequest(
+                        CachePrewarmKind.StudioSettings, studioId, generation));
+                }
+            }
+        }
+    }
+
+    private async Task PublishMembershipChangedAsync(
+        Guid studioId,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        await InvalidateStudioAsync(studioId);
+        if (cache.IsEnabled(_caching.StorageUsage))
+        {
+            _ = await generations.BumpAsync("storage-usage", $"owner-Studio-{studioId:N}");
+        }
+        await mediator.Publish(new StudioMembershipChangedEvent(studioId, userId), CancellationToken.None);
     }
 
     private async Task<UserStudio> RequireAdminAsync(Guid studioId, Guid callerUserId, CancellationToken cancellationToken)
@@ -490,6 +579,7 @@ internal sealed class StudioService(
         if (save)
         {
             await studios.SaveChangesAsync(cancellationToken);
+            await PublishMembershipChangedAsync(invitation.StudioId, user.Id, cancellationToken);
         }
 
         await notifications.CreateAsync(user.Id, invitation.StudioId, "MemberJoined", "You joined a Studio.", $"/teams/{invitation.StudioId}", cancellationToken);

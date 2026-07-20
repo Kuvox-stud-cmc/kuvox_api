@@ -5,6 +5,7 @@ using Kuvox.Api.Modules.Media.Services;
 using Kuvox.Api.Modules.Projects.Contracts;
 using Kuvox.Api.Modules.Shared.Infrastructure;
 using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
+using Kuvox.Api.Modules.Shared.Infrastructure.Caching;
 using Kuvox.Api.Modules.Shared.Infrastructure.RabbitMQ;
 using Kuvox.Api.Modules.Timelines.Contracts;
 using Kuvox.Api.Modules.Timelines.Dtos;
@@ -25,6 +26,89 @@ public sealed class TimelineServiceTests
     private static readonly Guid ProjectId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid UserId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private static readonly CallerContext Caller = new(UserId, []);
+
+    [Fact]
+    public async Task ListByProjectAsync_returns_empty_for_authorized_project_without_timeline()
+    {
+        var result = await CreateService(new FakeTimelineRepository())
+            .ListByProjectAsync(ProjectId, Caller);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task ListByProjectAsync_returns_authorized_timeline_summary()
+    {
+        var repository = new FakeTimelineRepository();
+        var timeline = repository.AddTimeline(ProjectId);
+
+        var result = await CreateService(repository).ListByProjectAsync(ProjectId, Caller);
+
+        var item = Assert.Single(result);
+        Assert.Equal(timeline.Id, item.Id);
+        Assert.Equal(ProjectId, item.ProjectId);
+    }
+
+    [Fact]
+    public async Task Warm_document_reads_reauthorize_and_only_repeat_the_revision_projection()
+    {
+        var repository = new FakeTimelineRepository();
+        var timeline = repository.AddTimeline(ProjectId);
+        repository.AddRevision(timeline.Id, 1);
+        var cache = CreateEnabledDocumentCache();
+        var service = CreateService(repository, documentCache: cache);
+
+        await service.GetCurrentDocumentAsync(ProjectId, Caller);
+        await service.GetCurrentDocumentAsync(ProjectId, Caller);
+
+        Assert.Equal(2, repository.RevisionIdentityReads);
+        Assert.Equal(1, repository.FullRevisionReads);
+
+        var revoked = CreateService(
+            repository,
+            new FakeProjectsApi { ReadException = DomainException.Forbidden("revoked") },
+            documentCache: cache);
+        await Assert.ThrowsAsync<DomainException>(() => revoked.GetCurrentDocumentAsync(ProjectId, Caller));
+        Assert.Equal(1, repository.FullRevisionReads);
+    }
+
+    [Fact]
+    public async Task Rendering_transition_deletes_only_the_exact_prior_status_key_after_commit()
+    {
+        var repository = new FakeTimelineRepository();
+        var timeline = repository.AddTimeline(ProjectId);
+        var revision = repository.AddRevision(timeline.Id, 1);
+        var priorUpdatedAt = new DateTimeOffset(2026, 7, 19, 1, 0, 0, TimeSpan.Zero);
+        var job = new RenderJob
+        {
+            TimelineId = timeline.Id,
+            RevisionId = revision.Id,
+            RequestedByUserId = UserId,
+            Status = RenderStatus.Queued,
+            UpdatedAt = priorUpdatedAt,
+        };
+        repository.RenderJobs.Add(job);
+        var (cache, store) = CreateEnabledRenderCache();
+        await cache.WriteRenderJobAsync(job.Id, "queued", priorUpdatedAt, new { status = "queued" });
+        var priorKey = cache.RenderJobKey(job.Id, "queued", priorUpdatedAt);
+        Assert.True(store.Contains(priorKey));
+
+        await RenderingResultConsumer.ApplyStartedAsync(
+            repository,
+            new FakeRenderRealtimeNotifier(repository),
+            cache,
+            new RenderingStartedEvent(
+                Guid.CreateVersion7(),
+                "rendering.started",
+                priorUpdatedAt.AddSeconds(1),
+                Guid.CreateVersion7(),
+                job.Id,
+                priorUpdatedAt.AddSeconds(1)),
+            CancellationToken.None);
+
+        Assert.False(store.Contains(priorKey));
+        Assert.Equal(RenderStatus.Rendering, job.Status);
+    }
 
     [Fact]
     public async Task GetCurrentDocumentAsync_returns_latest_video_document()
@@ -396,16 +480,60 @@ public sealed class TimelineServiceTests
         FakeProjectsApi? projects = null,
         FakeMediaApi? media = null,
         FakeFileStorageService? storage = null,
-        FakeRenderRealtimeNotifier? realtime = null) =>
+        FakeRenderRealtimeNotifier? realtime = null,
+        EditorDocumentCache? documentCache = null) =>
         new(
             repository,
             projects ?? new FakeProjectsApi(),
             media ?? new FakeMediaApi(),
             storage ?? new FakeFileStorageService(),
             realtime ?? new FakeRenderRealtimeNotifier(repository),
+            documentCache ?? CreateDocumentCache(),
             Options.Create(new RabbitMqOptions { ExchangeName = "kuvox.events" }),
             Options.Create(new StorageOptions { RawBucketName = "kuvox-renders" }),
             NullLogger<TimelineService>.Instance);
+
+    private static EditorDocumentCache CreateDocumentCache()
+    {
+        var options = new CachingOptions();
+        var store = new DisabledCacheStore();
+        var codec = new JsonCacheCodec(new SystemCacheClock());
+        var business = new BusinessCache(store, codec, Options.Create(options), NullLogger<BusinessCache>.Instance);
+        return new EditorDocumentCache(business, new CacheKeyFactory(options), Options.Create(options));
+    }
+
+    private static EditorDocumentCache CreateEnabledDocumentCache()
+    {
+        var options = new CachingOptions
+        {
+            Enabled = true,
+            BusinessReads = new CacheFeatureOptions { Enabled = true },
+            EditorDocuments = new CacheFeatureOptions { Enabled = true, TtlSeconds = 15 },
+        };
+        var business = new BusinessCache(
+            new TestCacheStore(),
+            new JsonCacheCodec(new SystemCacheClock()),
+            Options.Create(options),
+            NullLogger<BusinessCache>.Instance);
+        return new EditorDocumentCache(business, new CacheKeyFactory(options), Options.Create(options));
+    }
+
+    private static (EditorDocumentCache Cache, TestCacheStore Store) CreateEnabledRenderCache()
+    {
+        var options = new CachingOptions
+        {
+            Enabled = true,
+            BusinessReads = new CacheFeatureOptions { Enabled = true },
+            RenderJobs = new CacheFeatureOptions { Enabled = true, TtlSeconds = 3 },
+        };
+        var store = new TestCacheStore();
+        var business = new BusinessCache(
+            store,
+            new JsonCacheCodec(new SystemCacheClock()),
+            Options.Create(options),
+            NullLogger<BusinessCache>.Instance);
+        return (new EditorDocumentCache(business, new CacheKeyFactory(options), Options.Create(options)), store);
+    }
 
     private static SaveTimelineDocumentRequest SaveRequest(Guid projectId, int baseRevisionNumber, string operationsJson = "[]") =>
         new(
@@ -512,11 +640,13 @@ public sealed class TimelineServiceTests
         public ProjectDocumentAccess ReadAccess { get; init; } = new(ProjectId, ProjectContentKind.Video, "Video Project", DateTimeOffset.UtcNow);
         public ProjectDocumentAccess WriteAccess { get; init; } = new(ProjectId, ProjectContentKind.Video, "Video Project", DateTimeOffset.UtcNow);
         public DomainException? WriteException { get; init; }
+        public DomainException? ReadException { get; init; }
 
         public Task<bool> ProjectExistsAsync(Guid projectId, CancellationToken cancellationToken = default) => Task.FromResult(projectId == ProjectId);
         public Task<ProjectSummary?> GetSummaryAsync(Guid projectId, CancellationToken cancellationToken = default) => Task.FromResult<ProjectSummary?>(null);
         public Task<int> CountByWorkspaceAsync(Guid ownerId, ProjectOwnerKind ownerKind, CancellationToken cancellationToken = default) => Task.FromResult(0);
-        public Task<ProjectDocumentAccess> RequireReadAccessAsync(Guid projectId, CallerContext caller, CancellationToken cancellationToken = default) => Task.FromResult(ReadAccess);
+        public Task<ProjectDocumentAccess> RequireReadAccessAsync(Guid projectId, CallerContext caller, CancellationToken cancellationToken = default) =>
+            ReadException is not null ? Task.FromException<ProjectDocumentAccess>(ReadException) : Task.FromResult(ReadAccess);
 
         public Task<ProjectDocumentAccess> RequireWriteAccessAsync(Guid projectId, CallerContext caller, CancellationToken cancellationToken = default) =>
             WriteException is not null ? Task.FromException<ProjectDocumentAccess>(WriteException) : Task.FromResult(WriteAccess);
@@ -569,6 +699,8 @@ public sealed class TimelineServiceTests
         public List<OutboxMessage> OutboxMessages { get; } = [];
         public bool SaveChangesCalled { get; private set; }
         public int SaveChangesCount { get; private set; }
+        public int RevisionIdentityReads { get; private set; }
+        public int FullRevisionReads { get; private set; }
 
         public Timeline AddTimeline(Guid projectId)
         {
@@ -597,14 +729,60 @@ public sealed class TimelineServiceTests
         public Task<IReadOnlyList<Timeline>> ListByProjectAsync(Guid projectId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<Timeline>>(Timelines.Where(t => t.ProjectId == projectId).ToList());
         public Task<int> CountByProjectAsync(Guid projectId, CancellationToken cancellationToken = default) => Task.FromResult(Timelines.Count(t => t.ProjectId == projectId));
         public Task<TimelineRevision?> GetLatestRevisionAsync(Guid timelineId, CancellationToken cancellationToken = default) => Task.FromResult(Revisions.Where(r => r.TimelineId == timelineId).OrderByDescending(r => r.RevisionNumber).FirstOrDefault());
+        public Task<TimelineRevisionIdentity?> GetCurrentRevisionIdentityAsync(Guid projectId, CancellationToken cancellationToken = default)
+        {
+            RevisionIdentityReads++;
+            var timeline = Timelines.FirstOrDefault(t => t.ProjectId == projectId);
+            var revision = timeline is null ? null : Revisions.Where(r => r.TimelineId == timeline.Id).OrderByDescending(r => r.RevisionNumber).FirstOrDefault();
+            return Task.FromResult(timeline is null || revision is null
+                ? null
+                : new TimelineRevisionIdentity(projectId, timeline.Id, timeline.Name, timeline.CreatedAt, timeline.UpdatedAt, revision.Id, revision.RevisionNumber));
+        }
         public Task<TimelineRevision?> GetRevisionByNumberAsync(Guid timelineId, int revisionNumber, CancellationToken cancellationToken = default) => Task.FromResult(Revisions.FirstOrDefault(r => r.TimelineId == timelineId && r.RevisionNumber == revisionNumber));
-        public Task<TimelineRevision?> GetRevisionByIdAsync(Guid revisionId, CancellationToken cancellationToken = default) => Task.FromResult(Revisions.FirstOrDefault(r => r.Id == revisionId));
+        public Task<TimelineRevision?> GetRevisionByIdAsync(Guid revisionId, CancellationToken cancellationToken = default)
+        {
+            FullRevisionReads++;
+            return Task.FromResult(Revisions.FirstOrDefault(r => r.Id == revisionId));
+        }
         public Task<RenderJob?> GetRenderJobByIdAsync(Guid renderJobId, CancellationToken cancellationToken = default) => Task.FromResult(RenderJobs.FirstOrDefault(j => j.Id == renderJobId));
+        public Task<RenderJobAccessState?> GetRenderJobAccessStateAsync(Guid renderJobId, CancellationToken cancellationToken = default)
+        {
+            var job = RenderJobs.FirstOrDefault(j => j.Id == renderJobId);
+            var timeline = job is null ? null : Timelines.FirstOrDefault(t => t.Id == job.TimelineId);
+            var revision = job?.RevisionId is { } revisionId ? Revisions.FirstOrDefault(r => r.Id == revisionId) : null;
+            return Task.FromResult(job is null || timeline is null
+                ? null
+                : new RenderJobAccessState(timeline.ProjectId, timeline.Id, job.RevisionId, revision?.RevisionNumber, job.Status, job.UpdatedAt));
+        }
         public Task AddAsync(Timeline timeline, CancellationToken cancellationToken = default) { Timelines.Add(timeline); return Task.CompletedTask; }
         public Task AddRevisionAsync(TimelineRevision revision, CancellationToken cancellationToken = default) { Revisions.Add(revision); return Task.CompletedTask; }
         public Task AddRenderJobAsync(RenderJob renderJob, CancellationToken cancellationToken = default) { RenderJobs.Add(renderJob); return Task.CompletedTask; }
         public Task EnqueueOutboxAsync(OutboxMessage message, CancellationToken cancellationToken = default) { OutboxMessages.Add(message); return Task.CompletedTask; }
         public Task SaveChangesAsync(CancellationToken cancellationToken = default) { SaveChangesCalled = true; SaveChangesCount++; return Task.CompletedTask; }
+    }
+
+    private sealed class TestCacheStore : ICacheStore
+    {
+        private readonly Dictionary<string, byte[]> _values = [];
+
+        public bool Contains(string key) => _values.ContainsKey(key);
+
+        public Task<CacheReadResult> GetAsync(string key, CancellationToken cancellationToken = default) =>
+            Task.FromResult(_values.TryGetValue(key, out var value)
+                ? new CacheReadResult(CacheReadOutcome.Hit, value)
+                : new CacheReadResult(CacheReadOutcome.Miss));
+
+        public Task<CacheWriteOutcome> SetAsync(string key, ReadOnlyMemory<byte> value, TimeSpan ttl, CancellationToken cancellationToken = default)
+        {
+            _values[key] = value.ToArray();
+            return Task.FromResult(CacheWriteOutcome.Success);
+        }
+
+        public Task<CacheWriteOutcome> DeleteAsync(string key, CancellationToken cancellationToken = default)
+        {
+            _values.Remove(key);
+            return Task.FromResult(CacheWriteOutcome.Success);
+        }
     }
 
     private sealed class FakeRenderRealtimeNotifier(FakeTimelineRepository repository) : IRenderRealtimeNotifier
@@ -640,6 +818,12 @@ public sealed class TimelineServiceTests
                 3,
                 "\"etag\""));
         }
+
+        public Task<bool> ExistsAsync(
+            string bucketName,
+            string objectKey,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(true);
 
         public Task DeleteAsync(string bucketName, string objectKey, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;

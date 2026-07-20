@@ -1,0 +1,1276 @@
+{
+  "captured_at": "2026-07-19T09:01:12.616844+00:00",
+  "fixture": {
+    "schema_version": 1,
+    "search_revision": 1
+  },
+  "groups": {
+    "album-lists": {
+      "cold": {
+        "http_requests": 1,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"albums\",operation=\"create\",outcome=\"success\"}": 1.0,
+          "kuvox_business_cache_generation_operations_total{domain=\"media-projection\",operation=\"get\",outcome=\"hit\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"albums\",operation=\"authoritative\",outcome=\"success\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"albums\",operation=\"list\",outcome=\"miss\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"albums\",operation=\"write\",outcome=\"success\"}": 1.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"media\",command_type=\"select\"}": 1.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.001757,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"media\",command_type=\"select\"}": 0.00092,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 5.0,
+          "kuvox_postgres_commands_total{module=\"media\",command_type=\"select\"}": 1.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 3.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"set\",outcome=\"success\"}": 2.0
+        },
+        "p50_ms": 15.338,
+        "p95_ms": 15.338,
+        "payload_bytes": {
+          "average": 2.0,
+          "maximum": 2,
+          "p95": 2.0
+        },
+        "postgres_commands": 6.0,
+        "postgres_commands_per_batch": 6.0,
+        "request_batches": 1,
+        "response_hashes": [
+          "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "disabled": {
+        "http_requests": 5,
+        "metric_deltas": {
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 17.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"media\",command_type=\"select\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.005801,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"media\",command_type=\"select\"}": 0.0019,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 17.0,
+          "kuvox_postgres_commands_total{module=\"media\",command_type=\"select\"}": 5.0
+        },
+        "p50_ms": 2.387,
+        "p95_ms": 16.43,
+        "payload_bytes": {
+          "average": 2.0,
+          "maximum": 2,
+          "p95": 2.0
+        },
+        "postgres_commands": 22.0,
+        "postgres_commands_per_batch": 4.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "redis_unavailable": {
+        "http_requests": 5,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"albums\",operation=\"get\",outcome=\"bypass\"}": 5.0,
+          "kuvox_business_cache_generation_operations_total{domain=\"media-projection\",operation=\"get\",outcome=\"bypass\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 17.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"media\",command_type=\"select\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.005558,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"media\",command_type=\"select\"}": 0.001752,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 17.0,
+          "kuvox_postgres_commands_total{module=\"media\",command_type=\"select\"}": 5.0
+        },
+        "p50_ms": 2.377,
+        "p95_ms": 14.245,
+        "payload_bytes": {
+          "average": 2.0,
+          "maximum": 2,
+          "p95": 2.0
+        },
+        "postgres_commands": 22.0,
+        "postgres_commands_per_batch": 4.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "warm": {
+        "http_requests": 5,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"albums\",operation=\"get\",outcome=\"hit\"}": 5.0,
+          "kuvox_business_cache_generation_operations_total{domain=\"media-projection\",operation=\"get\",outcome=\"hit\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"albums\",operation=\"list\",outcome=\"hit\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 17.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.005068,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 17.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 15.0
+        },
+        "p50_ms": 3.141,
+        "p95_ms": 3.766,
+        "payload_bytes": {
+          "average": 2.0,
+          "maximum": 2,
+          "p95": 2.0
+        },
+        "postgres_commands": 17.0,
+        "postgres_commands_per_batch": 3.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05"
+        ],
+        "statuses": [
+          200
+        ]
+      }
+    },
+    "editor-documents": {
+      "cold": {
+        "http_requests": 3,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"media-projection\",operation=\"get\",outcome=\"hit\"}": 2.0,
+          "kuvox_business_cache_generation_operations_total{domain=\"projects\",operation=\"get\",outcome=\"hit\"}": 2.0,
+          "kuvox_business_cache_operations_total{domain=\"projects\",operation=\"detail\",outcome=\"hit\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"projects\",operation=\"media\",outcome=\"hit\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"timeline-document\",operation=\"authoritative\",outcome=\"success\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"timeline-document\",operation=\"read\",outcome=\"hit\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"timeline-document\",operation=\"read\",outcome=\"miss\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"timeline-document\",operation=\"write\",outcome=\"success\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"timeline-list\",operation=\"authoritative\",outcome=\"success\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"timeline-list\",operation=\"read\",outcome=\"miss\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"timeline-list\",operation=\"write\",outcome=\"success\"}": 1.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 11.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"projects\",command_type=\"select\"}": 3.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"timelines\",command_type=\"select\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.008237,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"projects\",command_type=\"select\"}": 0.001987,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"timelines\",command_type=\"select\"}": 0.003652,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 11.0,
+          "kuvox_postgres_commands_total{module=\"projects\",command_type=\"select\"}": 3.0,
+          "kuvox_postgres_commands_total{module=\"timelines\",command_type=\"select\"}": 5.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 9.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"set\",outcome=\"success\"}": 2.0
+        },
+        "p50_ms": 80.366,
+        "p95_ms": 80.366,
+        "payload_bytes": {
+          "average": 3559.0,
+          "maximum": 3559,
+          "p95": 3559.0
+        },
+        "postgres_commands": 19.0,
+        "postgres_commands_per_batch": 19.0,
+        "request_batches": 1,
+        "response_hashes": [
+          "3bdfb37bc22dd079aa99e00c3a7b7b0988ed4cb143cb09c9c1abee36b9245047"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "disabled": {
+        "http_requests": 15,
+        "metric_deltas": {
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 47.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"media\",command_type=\"select\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"projects\",command_type=\"select\"}": 65.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"timelines\",command_type=\"select\"}": 25.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.015319,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"media\",command_type=\"select\"}": 0.003709,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"projects\",command_type=\"select\"}": 0.023611,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"timelines\",command_type=\"select\"}": 0.007165,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 47.0,
+          "kuvox_postgres_commands_total{module=\"media\",command_type=\"select\"}": 5.0,
+          "kuvox_postgres_commands_total{module=\"projects\",command_type=\"select\"}": 65.0,
+          "kuvox_postgres_commands_total{module=\"timelines\",command_type=\"select\"}": 25.0
+        },
+        "p50_ms": 10.805,
+        "p95_ms": 30.195,
+        "payload_bytes": {
+          "average": 3559.0,
+          "maximum": 3559,
+          "p95": 3559.0
+        },
+        "postgres_commands": 142.0,
+        "postgres_commands_per_batch": 28.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "3bdfb37bc22dd079aa99e00c3a7b7b0988ed4cb143cb09c9c1abee36b9245047"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "redis_unavailable": {
+        "http_requests": 15,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"media-projection\",operation=\"get\",outcome=\"bypass\"}": 10.0,
+          "kuvox_business_cache_generation_operations_total{domain=\"projects\",operation=\"get\",outcome=\"bypass\"}": 10.0,
+          "kuvox_business_cache_operations_total{domain=\"timeline-document\",operation=\"authoritative\",outcome=\"success\"}": 10.0,
+          "kuvox_business_cache_operations_total{domain=\"timeline-document\",operation=\"read\",outcome=\"bypass\"}": 10.0,
+          "kuvox_business_cache_operations_total{domain=\"timeline-document\",operation=\"write\",outcome=\"bypass\"}": 10.0,
+          "kuvox_business_cache_operations_total{domain=\"timeline-list\",operation=\"authoritative\",outcome=\"success\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"timeline-list\",operation=\"read\",outcome=\"bypass\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"timeline-list\",operation=\"write\",outcome=\"bypass\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 47.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"media\",command_type=\"select\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"projects\",command_type=\"select\"}": 65.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"timelines\",command_type=\"select\"}": 30.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.014229,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"media\",command_type=\"select\"}": 0.002773,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"projects\",command_type=\"select\"}": 0.01511,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"timelines\",command_type=\"select\"}": 0.009371,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 47.0,
+          "kuvox_postgres_commands_total{module=\"media\",command_type=\"select\"}": 5.0,
+          "kuvox_postgres_commands_total{module=\"projects\",command_type=\"select\"}": 65.0,
+          "kuvox_postgres_commands_total{module=\"timelines\",command_type=\"select\"}": 30.0
+        },
+        "p50_ms": 13.443,
+        "p95_ms": 52.077,
+        "payload_bytes": {
+          "average": 3559.0,
+          "maximum": 3559,
+          "p95": 3559.0
+        },
+        "postgres_commands": 147.0,
+        "postgres_commands_per_batch": 29.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "3bdfb37bc22dd079aa99e00c3a7b7b0988ed4cb143cb09c9c1abee36b9245047"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "warm": {
+        "http_requests": 15,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"media-projection\",operation=\"get\",outcome=\"hit\"}": 10.0,
+          "kuvox_business_cache_generation_operations_total{domain=\"projects\",operation=\"get\",outcome=\"hit\"}": 10.0,
+          "kuvox_business_cache_operations_total{domain=\"projects\",operation=\"detail\",outcome=\"hit\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"projects\",operation=\"media\",outcome=\"hit\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"timeline-document\",operation=\"read\",outcome=\"hit\"}": 10.0,
+          "kuvox_business_cache_operations_total{domain=\"timeline-list\",operation=\"read\",outcome=\"hit\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 47.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"projects\",command_type=\"select\"}": 15.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"timelines\",command_type=\"select\"}": 15.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.021113,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"projects\",command_type=\"select\"}": 0.006386,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"timelines\",command_type=\"select\"}": 0.006982,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 47.0,
+          "kuvox_postgres_commands_total{module=\"projects\",command_type=\"select\"}": 15.0,
+          "kuvox_postgres_commands_total{module=\"timelines\",command_type=\"select\"}": 15.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 45.0
+        },
+        "p50_ms": 15.323,
+        "p95_ms": 19.802,
+        "payload_bytes": {
+          "average": 3559.0,
+          "maximum": 3559,
+          "p95": 3559.0
+        },
+        "postgres_commands": 77.0,
+        "postgres_commands_per_batch": 15.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "3bdfb37bc22dd079aa99e00c3a7b7b0988ed4cb143cb09c9c1abee36b9245047"
+        ],
+        "statuses": [
+          200
+        ]
+      }
+    },
+    "media-reads": {
+      "cold": {
+        "http_requests": 3,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"media\",operation=\"create\",outcome=\"success\"}": 2.0,
+          "kuvox_business_cache_generation_operations_total{domain=\"storage-usage\",operation=\"get\",outcome=\"hit\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"media\",operation=\"authoritative\",outcome=\"success\"}": 2.0,
+          "kuvox_business_cache_operations_total{domain=\"media\",operation=\"detail\",outcome=\"miss\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"media\",operation=\"workspace\",outcome=\"miss\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"media\",operation=\"write\",outcome=\"success\"}": 2.0,
+          "kuvox_business_cache_operations_total{domain=\"storage-usage\",operation=\"authoritative\",outcome=\"success\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"storage-usage\",operation=\"usage\",outcome=\"miss\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"storage-usage\",operation=\"write\",outcome=\"success\"}": 1.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 11.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"media\",command_type=\"select\"}": 7.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.006543,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"media\",command_type=\"select\"}": 0.007668,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 11.0,
+          "kuvox_postgres_commands_total{module=\"media\",command_type=\"select\"}": 7.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 6.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"set\",outcome=\"success\"}": 5.0
+        },
+        "p50_ms": 120.157,
+        "p95_ms": 120.157,
+        "payload_bytes": {
+          "average": 2052.0,
+          "maximum": 2052,
+          "p95": 2052.0
+        },
+        "postgres_commands": 18.0,
+        "postgres_commands_per_batch": 18.0,
+        "request_batches": 1,
+        "response_hashes": [
+          "489deca6e1327636c2135fbdb2932d78181f95b2ba708a1389c5b7aef63e95c3"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "disabled": {
+        "http_requests": 15,
+        "metric_deltas": {
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 47.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"media\",command_type=\"select\"}": 35.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.013663,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"media\",command_type=\"select\"}": 0.016896,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 47.0,
+          "kuvox_postgres_commands_total{module=\"media\",command_type=\"select\"}": 35.0
+        },
+        "p50_ms": 9.406,
+        "p95_ms": 11.609,
+        "payload_bytes": {
+          "average": 2052.0,
+          "maximum": 2052,
+          "p95": 2052.0
+        },
+        "postgres_commands": 82.0,
+        "postgres_commands_per_batch": 16.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "489deca6e1327636c2135fbdb2932d78181f95b2ba708a1389c5b7aef63e95c3"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "redis_unavailable": {
+        "http_requests": 15,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"media\",operation=\"get\",outcome=\"bypass\"}": 10.0,
+          "kuvox_business_cache_generation_operations_total{domain=\"storage-usage\",operation=\"get\",outcome=\"bypass\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 47.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"media\",command_type=\"select\"}": 35.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.01277,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"media\",command_type=\"select\"}": 0.016165,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 47.0,
+          "kuvox_postgres_commands_total{module=\"media\",command_type=\"select\"}": 35.0
+        },
+        "p50_ms": 8.614,
+        "p95_ms": 74.274,
+        "payload_bytes": {
+          "average": 2052.0,
+          "maximum": 2052,
+          "p95": 2052.0
+        },
+        "postgres_commands": 82.0,
+        "postgres_commands_per_batch": 16.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "489deca6e1327636c2135fbdb2932d78181f95b2ba708a1389c5b7aef63e95c3"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "warm": {
+        "http_requests": 15,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"media\",operation=\"get\",outcome=\"hit\"}": 10.0,
+          "kuvox_business_cache_generation_operations_total{domain=\"storage-usage\",operation=\"get\",outcome=\"hit\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"media\",operation=\"detail\",outcome=\"hit\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"media\",operation=\"workspace\",outcome=\"hit\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"storage-usage\",operation=\"usage\",outcome=\"hit\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 47.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"media\",command_type=\"select\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.023902,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"media\",command_type=\"select\"}": 0.004675,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 47.0,
+          "kuvox_postgres_commands_total{module=\"media\",command_type=\"select\"}": 5.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 30.0
+        },
+        "p50_ms": 11.433,
+        "p95_ms": 18.566,
+        "payload_bytes": {
+          "average": 2052.0,
+          "maximum": 2052,
+          "p95": 2052.0
+        },
+        "postgres_commands": 52.0,
+        "postgres_commands_per_batch": 10.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "489deca6e1327636c2135fbdb2932d78181f95b2ba708a1389c5b7aef63e95c3"
+        ],
+        "statuses": [
+          200
+        ]
+      }
+    },
+    "notification-count": {
+      "cold": {
+        "http_requests": 1,
+        "metric_deltas": {
+          "kuvox_business_cache_operations_total{domain=\"notification-count\",operation=\"authoritative\",outcome=\"success\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"notification-count\",operation=\"count\",outcome=\"miss\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"notification-count\",operation=\"write\",outcome=\"success\"}": 1.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 4.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"notifications\",command_type=\"select\"}": 1.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.001205,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"notifications\",command_type=\"select\"}": 0.001138,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 4.0,
+          "kuvox_postgres_commands_total{module=\"notifications\",command_type=\"select\"}": 1.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 1.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"set\",outcome=\"success\"}": 1.0
+        },
+        "p50_ms": 21.476,
+        "p95_ms": 21.476,
+        "payload_bytes": {
+          "average": 11.0,
+          "maximum": 11,
+          "p95": 11.0
+        },
+        "postgres_commands": 5.0,
+        "postgres_commands_per_batch": 5.0,
+        "request_batches": 1,
+        "response_hashes": [
+          "831fd6181808cdbd39d2e91a92418809d34d80f8bbc8ab49373a5eabe92f6b51"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "disabled": {
+        "http_requests": 5,
+        "metric_deltas": {
+          "kuvox_business_cache_operations_total{domain=\"notification-count\",operation=\"authoritative\",outcome=\"success\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"notification-count\",operation=\"count\",outcome=\"disabled\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 12.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"notifications\",command_type=\"select\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.002757,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"notifications\",command_type=\"select\"}": 0.001402,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 12.0,
+          "kuvox_postgres_commands_total{module=\"notifications\",command_type=\"select\"}": 5.0
+        },
+        "p50_ms": 1.24,
+        "p95_ms": 2.094,
+        "payload_bytes": {
+          "average": 11.0,
+          "maximum": 11,
+          "p95": 11.0
+        },
+        "postgres_commands": 17.0,
+        "postgres_commands_per_batch": 3.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "831fd6181808cdbd39d2e91a92418809d34d80f8bbc8ab49373a5eabe92f6b51"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "redis_unavailable": {
+        "http_requests": 5,
+        "metric_deltas": {
+          "kuvox_business_cache_operations_total{domain=\"notification-count\",operation=\"authoritative\",outcome=\"success\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"notification-count\",operation=\"count\",outcome=\"bypass\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"notification-count\",operation=\"write\",outcome=\"bypass\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 12.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"notifications\",command_type=\"select\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.003057,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"notifications\",command_type=\"select\"}": 0.0018,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 12.0,
+          "kuvox_postgres_commands_total{module=\"notifications\",command_type=\"select\"}": 5.0
+        },
+        "p50_ms": 1.854,
+        "p95_ms": 18.417,
+        "payload_bytes": {
+          "average": 11.0,
+          "maximum": 11,
+          "p95": 11.0
+        },
+        "postgres_commands": 17.0,
+        "postgres_commands_per_batch": 3.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "831fd6181808cdbd39d2e91a92418809d34d80f8bbc8ab49373a5eabe92f6b51"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "warm": {
+        "http_requests": 5,
+        "metric_deltas": {
+          "kuvox_business_cache_operations_total{domain=\"notification-count\",operation=\"count\",outcome=\"hit\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 12.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.003107,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 12.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 5.0
+        },
+        "p50_ms": 1.533,
+        "p95_ms": 2.532,
+        "payload_bytes": {
+          "average": 11.0,
+          "maximum": 11,
+          "p95": 11.0
+        },
+        "postgres_commands": 12.0,
+        "postgres_commands_per_batch": 2.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "831fd6181808cdbd39d2e91a92418809d34d80f8bbc8ab49373a5eabe92f6b51"
+        ],
+        "statuses": [
+          200
+        ]
+      }
+    },
+    "project-reads": {
+      "cold": {
+        "http_requests": 3,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"media-projection\",operation=\"create\",outcome=\"success\"}": 1.0,
+          "kuvox_business_cache_generation_operations_total{domain=\"media-projection\",operation=\"get\",outcome=\"hit\"}": 2.0,
+          "kuvox_business_cache_generation_operations_total{domain=\"projects\",operation=\"create\",outcome=\"success\"}": 2.0,
+          "kuvox_business_cache_generation_operations_total{domain=\"projects\",operation=\"get\",outcome=\"hit\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"projects\",operation=\"authoritative\",outcome=\"success\"}": 3.0,
+          "kuvox_business_cache_operations_total{domain=\"projects\",operation=\"detail\",outcome=\"miss\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"projects\",operation=\"media\",outcome=\"miss\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"projects\",operation=\"workspace\",outcome=\"miss\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"projects\",operation=\"write\",outcome=\"success\"}": 3.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 11.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"media\",command_type=\"select\"}": 1.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"projects\",command_type=\"select\"}": 18.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.005948,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"media\",command_type=\"select\"}": 0.001811,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"projects\",command_type=\"select\"}": 0.026949,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 11.0,
+          "kuvox_postgres_commands_total{module=\"media\",command_type=\"select\"}": 1.0,
+          "kuvox_postgres_commands_total{module=\"projects\",command_type=\"select\"}": 18.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 9.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"set\",outcome=\"success\"}": 6.0
+        },
+        "p50_ms": 156.718,
+        "p95_ms": 156.718,
+        "payload_bytes": {
+          "average": 1622.0,
+          "maximum": 1622,
+          "p95": 1622.0
+        },
+        "postgres_commands": 30.0,
+        "postgres_commands_per_batch": 30.0,
+        "request_batches": 1,
+        "response_hashes": [
+          "230acc32e417ce730f2d06886f1d45cf661db049935cf3eeeb16cdc4096dafd4"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "disabled": {
+        "http_requests": 15,
+        "metric_deltas": {
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 47.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"media\",command_type=\"select\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"projects\",command_type=\"select\"}": 90.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.011765,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"media\",command_type=\"select\"}": 0.002867,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"projects\",command_type=\"select\"}": 0.019283,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 47.0,
+          "kuvox_postgres_commands_total{module=\"media\",command_type=\"select\"}": 5.0,
+          "kuvox_postgres_commands_total{module=\"projects\",command_type=\"select\"}": 90.0
+        },
+        "p50_ms": 10.353,
+        "p95_ms": 11.925,
+        "payload_bytes": {
+          "average": 1622.0,
+          "maximum": 1622,
+          "p95": 1622.0
+        },
+        "postgres_commands": 142.0,
+        "postgres_commands_per_batch": 28.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "230acc32e417ce730f2d06886f1d45cf661db049935cf3eeeb16cdc4096dafd4"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "redis_unavailable": {
+        "http_requests": 15,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"media-projection\",operation=\"get\",outcome=\"bypass\"}": 15.0,
+          "kuvox_business_cache_generation_operations_total{domain=\"projects\",operation=\"get\",outcome=\"bypass\"}": 15.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 47.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"media\",command_type=\"select\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"projects\",command_type=\"select\"}": 90.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.01983,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"media\",command_type=\"select\"}": 0.003892,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"projects\",command_type=\"select\"}": 0.047508,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 47.0,
+          "kuvox_postgres_commands_total{module=\"media\",command_type=\"select\"}": 5.0,
+          "kuvox_postgres_commands_total{module=\"projects\",command_type=\"select\"}": 90.0
+        },
+        "p50_ms": 14.976,
+        "p95_ms": 127.118,
+        "payload_bytes": {
+          "average": 1622.0,
+          "maximum": 1622,
+          "p95": 1622.0
+        },
+        "postgres_commands": 142.0,
+        "postgres_commands_per_batch": 28.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "230acc32e417ce730f2d06886f1d45cf661db049935cf3eeeb16cdc4096dafd4"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "warm": {
+        "http_requests": 15,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"media-projection\",operation=\"get\",outcome=\"hit\"}": 15.0,
+          "kuvox_business_cache_generation_operations_total{domain=\"projects\",operation=\"get\",outcome=\"hit\"}": 15.0,
+          "kuvox_business_cache_operations_total{domain=\"projects\",operation=\"detail\",outcome=\"hit\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"projects\",operation=\"media\",outcome=\"hit\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"projects\",operation=\"workspace\",outcome=\"hit\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 47.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"projects\",command_type=\"select\"}": 10.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.030367,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"projects\",command_type=\"select\"}": 0.005508,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 47.0,
+          "kuvox_postgres_commands_total{module=\"projects\",command_type=\"select\"}": 10.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 45.0
+        },
+        "p50_ms": 12.933,
+        "p95_ms": 19.293,
+        "payload_bytes": {
+          "average": 1622.0,
+          "maximum": 1622,
+          "p95": 1622.0
+        },
+        "postgres_commands": 57.0,
+        "postgres_commands_per_batch": 11.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "230acc32e417ce730f2d06886f1d45cf661db049935cf3eeeb16cdc4096dafd4"
+        ],
+        "statuses": [
+          200
+        ]
+      }
+    },
+    "studio-settings-references": {
+      "cold": {
+        "http_requests": 4,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"studio\",operation=\"create\",outcome=\"success\"}": 1.0,
+          "kuvox_business_cache_generation_operations_total{domain=\"studio\",operation=\"get\",outcome=\"hit\"}": 3.0,
+          "kuvox_business_cache_operations_total{domain=\"studio\",operation=\"authoritative\",outcome=\"success\"}": 4.0,
+          "kuvox_business_cache_operations_total{domain=\"studio\",operation=\"notification-settings\",outcome=\"miss\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"studio\",operation=\"permissions\",outcome=\"miss\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"studio\",operation=\"roles\",outcome=\"miss\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"studio\",operation=\"workspace-settings\",outcome=\"miss\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"studio\",operation=\"write\",outcome=\"success\"}": 4.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 20.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.005258,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 20.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 8.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"set\",outcome=\"success\"}": 5.0
+        },
+        "p50_ms": 12.843,
+        "p95_ms": 12.843,
+        "payload_bytes": {
+          "average": 1288.0,
+          "maximum": 1288,
+          "p95": 1288.0
+        },
+        "postgres_commands": 20.0,
+        "postgres_commands_per_batch": 20.0,
+        "request_batches": 1,
+        "response_hashes": [
+          "49e95760887fcf69bd9214f47a1ad0d7774cf68da2f6211f22b6c5d78d4e0724"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "disabled": {
+        "http_requests": 20,
+        "metric_deltas": {
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 92.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.020276,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 92.0
+        },
+        "p50_ms": 7.028,
+        "p95_ms": 8.946,
+        "payload_bytes": {
+          "average": 1288.0,
+          "maximum": 1288,
+          "p95": 1288.0
+        },
+        "postgres_commands": 92.0,
+        "postgres_commands_per_batch": 18.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "49e95760887fcf69bd9214f47a1ad0d7774cf68da2f6211f22b6c5d78d4e0724"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "redis_unavailable": {
+        "http_requests": 20,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"studio\",operation=\"get\",outcome=\"bypass\"}": 20.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 92.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.02016,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 92.0
+        },
+        "p50_ms": 7.083,
+        "p95_ms": 8.933,
+        "payload_bytes": {
+          "average": 1288.0,
+          "maximum": 1288,
+          "p95": 1288.0
+        },
+        "postgres_commands": 92.0,
+        "postgres_commands_per_batch": 18.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "49e95760887fcf69bd9214f47a1ad0d7774cf68da2f6211f22b6c5d78d4e0724"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "warm": {
+        "http_requests": 20,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"studio\",operation=\"get\",outcome=\"hit\"}": 20.0,
+          "kuvox_business_cache_operations_total{domain=\"studio\",operation=\"notification-settings\",outcome=\"hit\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"studio\",operation=\"permissions\",outcome=\"hit\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"studio\",operation=\"roles\",outcome=\"hit\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"studio\",operation=\"workspace-settings\",outcome=\"hit\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 82.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.018142,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 82.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 40.0
+        },
+        "p50_ms": 8.651,
+        "p95_ms": 9.133,
+        "payload_bytes": {
+          "average": 1288.0,
+          "maximum": 1288,
+          "p95": 1288.0
+        },
+        "postgres_commands": 82.0,
+        "postgres_commands_per_batch": 16.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "49e95760887fcf69bd9214f47a1ad0d7774cf68da2f6211f22b6c5d78d4e0724"
+        ],
+        "statuses": [
+          200
+        ]
+      }
+    },
+    "studio-usage": {
+      "cold": {
+        "http_requests": 1,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"storage-usage\",operation=\"create\",outcome=\"success\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"storage-usage\",operation=\"authoritative\",outcome=\"success\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"storage-usage\",operation=\"studio-aggregate\",outcome=\"miss\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"storage-usage\",operation=\"write\",outcome=\"success\"}": 1.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 7.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"media\",command_type=\"select\"}": 2.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"projects\",command_type=\"select\"}": 2.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.002309,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"media\",command_type=\"select\"}": 0.002157,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"projects\",command_type=\"select\"}": 0.001071,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 7.0,
+          "kuvox_postgres_commands_total{module=\"media\",command_type=\"select\"}": 2.0,
+          "kuvox_postgres_commands_total{module=\"projects\",command_type=\"select\"}": 2.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"eval_release\",outcome=\"success\"}": 1.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 3.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"set\",outcome=\"success\"}": 2.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"set_nx_px\",outcome=\"success\"}": 1.0,
+          "kuvox_single_flight_events_total{service=\"api\",component=\"storage-usage\",outcome=\"leader\"}": 1.0
+        },
+        "p50_ms": 64.509,
+        "p95_ms": 64.509,
+        "payload_bytes": {
+          "average": 107.0,
+          "maximum": 107,
+          "p95": 107.0
+        },
+        "postgres_commands": 11.0,
+        "postgres_commands_per_batch": 11.0,
+        "request_batches": 1,
+        "response_hashes": [
+          "9c1978874daa0ea7b8cc1a1010ad9465bd30176200905a0a33bb2a1d489cce26"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "disabled": {
+        "http_requests": 5,
+        "metric_deltas": {
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 27.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"media\",command_type=\"select\"}": 10.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"projects\",command_type=\"select\"}": 10.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.006098,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"media\",command_type=\"select\"}": 0.004514,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"projects\",command_type=\"select\"}": 0.002438,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 27.0,
+          "kuvox_postgres_commands_total{module=\"media\",command_type=\"select\"}": 10.0,
+          "kuvox_postgres_commands_total{module=\"projects\",command_type=\"select\"}": 10.0
+        },
+        "p50_ms": 3.524,
+        "p95_ms": 5.746,
+        "payload_bytes": {
+          "average": 107.0,
+          "maximum": 107,
+          "p95": 107.0
+        },
+        "postgres_commands": 47.0,
+        "postgres_commands_per_batch": 9.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "9c1978874daa0ea7b8cc1a1010ad9465bd30176200905a0a33bb2a1d489cce26"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "redis_unavailable": {
+        "http_requests": 5,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"storage-usage\",operation=\"get\",outcome=\"bypass\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 27.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"media\",command_type=\"select\"}": 10.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"projects\",command_type=\"select\"}": 10.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.006447,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"media\",command_type=\"select\"}": 0.005089,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"projects\",command_type=\"select\"}": 0.003064,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 27.0,
+          "kuvox_postgres_commands_total{module=\"media\",command_type=\"select\"}": 10.0,
+          "kuvox_postgres_commands_total{module=\"projects\",command_type=\"select\"}": 10.0
+        },
+        "p50_ms": 3.821,
+        "p95_ms": 48.654,
+        "payload_bytes": {
+          "average": 107.0,
+          "maximum": 107,
+          "p95": 107.0
+        },
+        "postgres_commands": 47.0,
+        "postgres_commands_per_batch": 9.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "9c1978874daa0ea7b8cc1a1010ad9465bd30176200905a0a33bb2a1d489cce26"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "warm": {
+        "http_requests": 5,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"storage-usage\",operation=\"get\",outcome=\"hit\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"storage-usage\",operation=\"studio-aggregate\",outcome=\"hit\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 22.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.004988,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 22.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 10.0
+        },
+        "p50_ms": 2.066,
+        "p95_ms": 2.878,
+        "payload_bytes": {
+          "average": 107.0,
+          "maximum": 107,
+          "p95": 107.0
+        },
+        "postgres_commands": 22.0,
+        "postgres_commands_per_batch": 4.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "9c1978874daa0ea7b8cc1a1010ad9465bd30176200905a0a33bb2a1d489cce26"
+        ],
+        "statuses": [
+          200
+        ]
+      }
+    },
+    "task-lists": {
+      "cold": {
+        "http_requests": 1,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"tasks\",operation=\"create\",outcome=\"success\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"tasks\",operation=\"authoritative\",outcome=\"success\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"tasks\",operation=\"list\",outcome=\"miss\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"tasks\",operation=\"write\",outcome=\"success\"}": 1.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"tasks\",command_type=\"select\"}": 1.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.002699,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"tasks\",command_type=\"select\"}": 0.00419,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 5.0,
+          "kuvox_postgres_commands_total{module=\"tasks\",command_type=\"select\"}": 1.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 2.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"set\",outcome=\"success\"}": 2.0
+        },
+        "p50_ms": 60.751,
+        "p95_ms": 60.751,
+        "payload_bytes": {
+          "average": 2.0,
+          "maximum": 2,
+          "p95": 2.0
+        },
+        "postgres_commands": 6.0,
+        "postgres_commands_per_batch": 6.0,
+        "request_batches": 1,
+        "response_hashes": [
+          "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "disabled": {
+        "http_requests": 5,
+        "metric_deltas": {
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 17.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"tasks\",command_type=\"select\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.005755,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"tasks\",command_type=\"select\"}": 0.011413,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 17.0,
+          "kuvox_postgres_commands_total{module=\"tasks\",command_type=\"select\"}": 5.0
+        },
+        "p50_ms": 3.998,
+        "p95_ms": 63.188,
+        "payload_bytes": {
+          "average": 2.0,
+          "maximum": 2,
+          "p95": 2.0
+        },
+        "postgres_commands": 22.0,
+        "postgres_commands_per_batch": 4.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "redis_unavailable": {
+        "http_requests": 5,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"tasks\",operation=\"get\",outcome=\"bypass\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 17.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"tasks\",command_type=\"select\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.028166,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"tasks\",command_type=\"select\"}": 0.021811,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 17.0,
+          "kuvox_postgres_commands_total{module=\"tasks\",command_type=\"select\"}": 5.0
+        },
+        "p50_ms": 19.386,
+        "p95_ms": 61.739,
+        "payload_bytes": {
+          "average": 2.0,
+          "maximum": 2,
+          "p95": 2.0
+        },
+        "postgres_commands": 22.0,
+        "postgres_commands_per_batch": 4.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "warm": {
+        "http_requests": 5,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"tasks\",operation=\"get\",outcome=\"hit\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"tasks\",operation=\"list\",outcome=\"hit\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 17.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.004892,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 17.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 10.0
+        },
+        "p50_ms": 2.347,
+        "p95_ms": 2.741,
+        "payload_bytes": {
+          "average": 2.0,
+          "maximum": 2,
+          "p95": 2.0
+        },
+        "postgres_commands": 17.0,
+        "postgres_commands_per_batch": 3.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "cf1cbb66a638b4860a516671fb74850e6ccf787fe6c4c8d29e9c04efe880bd05"
+        ],
+        "statuses": [
+          200
+        ]
+      }
+    },
+    "task-references": {
+      "cold": {
+        "http_requests": 2,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"task-references\",operation=\"create\",outcome=\"success\"}": 1.0,
+          "kuvox_business_cache_generation_operations_total{domain=\"task-references\",operation=\"get\",outcome=\"hit\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"tasks\",operation=\"authoritative\",outcome=\"success\"}": 2.0,
+          "kuvox_business_cache_operations_total{domain=\"tasks\",operation=\"labels\",outcome=\"miss\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"tasks\",operation=\"milestones\",outcome=\"miss\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"tasks\",operation=\"write\",outcome=\"success\"}": 2.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 8.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"tasks\",command_type=\"select\"}": 2.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.004119,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"tasks\",command_type=\"select\"}": 0.002346,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 8.0,
+          "kuvox_postgres_commands_total{module=\"tasks\",command_type=\"select\"}": 2.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 4.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"set\",outcome=\"success\"}": 3.0
+        },
+        "p50_ms": 63.482,
+        "p95_ms": 63.482,
+        "payload_bytes": {
+          "average": 4.0,
+          "maximum": 4,
+          "p95": 4.0
+        },
+        "postgres_commands": 10.0,
+        "postgres_commands_per_batch": 10.0,
+        "request_batches": 1,
+        "response_hashes": [
+          "643d5437104296e21d906ecb15b2c96ad278f20cfc4af53b12bb6069bd853726"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "disabled": {
+        "http_requests": 10,
+        "metric_deltas": {
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 32.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"tasks\",command_type=\"select\"}": 10.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.008606,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"tasks\",command_type=\"select\"}": 0.002645,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 32.0,
+          "kuvox_postgres_commands_total{module=\"tasks\",command_type=\"select\"}": 10.0
+        },
+        "p50_ms": 3.268,
+        "p95_ms": 6.631,
+        "payload_bytes": {
+          "average": 4.0,
+          "maximum": 4,
+          "p95": 4.0
+        },
+        "postgres_commands": 42.0,
+        "postgres_commands_per_batch": 8.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "643d5437104296e21d906ecb15b2c96ad278f20cfc4af53b12bb6069bd853726"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "redis_unavailable": {
+        "http_requests": 10,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"task-references\",operation=\"get\",outcome=\"bypass\"}": 10.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 32.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"tasks\",command_type=\"select\"}": 10.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.010008,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"tasks\",command_type=\"select\"}": 0.00344,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 32.0,
+          "kuvox_postgres_commands_total{module=\"tasks\",command_type=\"select\"}": 10.0
+        },
+        "p50_ms": 3.848,
+        "p95_ms": 64.186,
+        "payload_bytes": {
+          "average": 4.0,
+          "maximum": 4,
+          "p95": 4.0
+        },
+        "postgres_commands": 42.0,
+        "postgres_commands_per_batch": 8.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "643d5437104296e21d906ecb15b2c96ad278f20cfc4af53b12bb6069bd853726"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "warm": {
+        "http_requests": 10,
+        "metric_deltas": {
+          "kuvox_business_cache_generation_operations_total{domain=\"task-references\",operation=\"get\",outcome=\"hit\"}": 10.0,
+          "kuvox_business_cache_operations_total{domain=\"tasks\",operation=\"labels\",outcome=\"hit\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"tasks\",operation=\"milestones\",outcome=\"hit\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 32.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.012796,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 32.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 20.0
+        },
+        "p50_ms": 6.055,
+        "p95_ms": 9.762,
+        "payload_bytes": {
+          "average": 4.0,
+          "maximum": 4,
+          "p95": 4.0
+        },
+        "postgres_commands": 32.0,
+        "postgres_commands_per_batch": 6.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "643d5437104296e21d906ecb15b2c96ad278f20cfc4af53b12bb6069bd853726"
+        ],
+        "statuses": [
+          200
+        ]
+      }
+    },
+    "user-profile-settings": {
+      "cold": {
+        "http_requests": 2,
+        "metric_deltas": {
+          "kuvox_business_cache_operations_total{domain=\"user-settings\",operation=\"authoritative\",outcome=\"success\"}": 2.0,
+          "kuvox_business_cache_operations_total{domain=\"user-settings\",operation=\"profile\",outcome=\"miss\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"user-settings\",operation=\"settings\",outcome=\"miss\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"user-settings\",operation=\"write\",outcome=\"success\"}": 2.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 8.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.005119,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 8.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 2.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"set\",outcome=\"success\"}": 2.0
+        },
+        "p50_ms": 11.377,
+        "p95_ms": 11.377,
+        "payload_bytes": {
+          "average": 721.0,
+          "maximum": 721,
+          "p95": 721.0
+        },
+        "postgres_commands": 8.0,
+        "postgres_commands_per_batch": 8.0,
+        "request_batches": 1,
+        "response_hashes": [
+          "7b2430dfcc32d3e21b68d9394da2e6aa4ad9dbff02713d76d0613c3e4cc468d7"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "disabled": {
+        "http_requests": 10,
+        "metric_deltas": {
+          "kuvox_business_cache_operations_total{domain=\"user-settings\",operation=\"authoritative\",outcome=\"success\"}": 10.0,
+          "kuvox_business_cache_operations_total{domain=\"user-settings\",operation=\"profile\",outcome=\"disabled\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"user-settings\",operation=\"settings\",outcome=\"disabled\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 32.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.017907,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 32.0
+        },
+        "p50_ms": 4.932,
+        "p95_ms": 5.878,
+        "payload_bytes": {
+          "average": 721.0,
+          "maximum": 721,
+          "p95": 721.0
+        },
+        "postgres_commands": 32.0,
+        "postgres_commands_per_batch": 6.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "7b2430dfcc32d3e21b68d9394da2e6aa4ad9dbff02713d76d0613c3e4cc468d7"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "redis_unavailable": {
+        "http_requests": 10,
+        "metric_deltas": {
+          "kuvox_business_cache_operations_total{domain=\"user-settings\",operation=\"authoritative\",outcome=\"success\"}": 10.0,
+          "kuvox_business_cache_operations_total{domain=\"user-settings\",operation=\"profile\",outcome=\"bypass\"}": 4.0,
+          "kuvox_business_cache_operations_total{domain=\"user-settings\",operation=\"profile\",outcome=\"error\"}": 1.0,
+          "kuvox_business_cache_operations_total{domain=\"user-settings\",operation=\"settings\",outcome=\"bypass\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"user-settings\",operation=\"write\",outcome=\"bypass\"}": 10.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 32.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.009542,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 32.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"error\"}": 1.0
+        },
+        "p50_ms": 3.402,
+        "p95_ms": 509.37,
+        "payload_bytes": {
+          "average": 721.0,
+          "maximum": 721,
+          "p95": 721.0
+        },
+        "postgres_commands": 32.0,
+        "postgres_commands_per_batch": 6.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "7b2430dfcc32d3e21b68d9394da2e6aa4ad9dbff02713d76d0613c3e4cc468d7"
+        ],
+        "statuses": [
+          200
+        ]
+      },
+      "warm": {
+        "http_requests": 10,
+        "metric_deltas": {
+          "kuvox_business_cache_operations_total{domain=\"user-settings\",operation=\"profile\",outcome=\"hit\"}": 5.0,
+          "kuvox_business_cache_operations_total{domain=\"user-settings\",operation=\"settings\",outcome=\"hit\"}": 5.0,
+          "kuvox_postgres_command_duration_seconds_count{module=\"auth\",command_type=\"select\"}": 22.0,
+          "kuvox_postgres_command_duration_seconds_sum{module=\"auth\",command_type=\"select\"}": 0.010899,
+          "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 22.0,
+          "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 10.0
+        },
+        "p50_ms": 3.836,
+        "p95_ms": 4.479,
+        "payload_bytes": {
+          "average": 721.0,
+          "maximum": 721,
+          "p95": 721.0
+        },
+        "postgres_commands": 22.0,
+        "postgres_commands_per_batch": 4.4,
+        "request_batches": 5,
+        "response_hashes": [
+          "7b2430dfcc32d3e21b68d9394da2e6aa4ad9dbff02713d76d0613c3e4cc468d7"
+        ],
+        "statuses": [
+          200
+        ]
+      }
+    }
+  },
+  "redis": {
+    "evicted_keys": 0,
+    "instance_used_memory_bytes": 1537432,
+    "key_cardinality": 30,
+    "key_pattern": "kuvox:v1:api:*",
+    "matched_memory_bytes": 16160
+  },
+  "repetitions": 5
+}

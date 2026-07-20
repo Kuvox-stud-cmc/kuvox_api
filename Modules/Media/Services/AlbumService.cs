@@ -6,6 +6,8 @@ using Kuvox.Api.Modules.Media.Repositories;
 using Kuvox.Api.Modules.Auth.Contracts;
 using Kuvox.Api.Modules.Notifications;
 using Kuvox.Api.Modules.Shared.Infrastructure;
+using Kuvox.Api.Modules.Shared.Infrastructure.Caching;
+using Microsoft.Extensions.Options;
 
 namespace Kuvox.Api.Modules.Media.Services;
 
@@ -13,8 +15,13 @@ internal sealed class AlbumService(
     IAlbumRepository albumRepository,
     IMediaRepository mediaRepository,
     IAuthApi auth,
-    INotificationsApi notifications) : IAlbumService
+    INotificationsApi notifications,
+    BusinessCache cache,
+    CacheGenerationManager generations,
+    CacheKeyFactory cacheKeys,
+    IOptions<CachingOptions> cachingOptions) : IAlbumService
 {
+    private readonly CachingOptions _caching = cachingOptions.Value;
     public async Task<AlbumDto> CreateAlbumAsync(
         WorkspaceScope scope,
         CallerContext caller,
@@ -58,6 +65,7 @@ internal sealed class AlbumService(
         }
 
         await albumRepository.SaveChangesAsync(cancellationToken);
+        await InvalidateAlbumAsync(album);
 
         return ToDto(album, false);
     }
@@ -88,6 +96,7 @@ internal sealed class AlbumService(
 
         albumRepository.Remove(album);
         await albumRepository.SaveChangesAsync(cancellationToken);
+        await InvalidateAlbumAsync(album);
     }
 
     public async Task AddMediaToAlbumAsync(WorkspaceScope? scope, Guid albumId, IEnumerable<Guid> mediaIds, CallerContext caller, CancellationToken cancellationToken = default)
@@ -106,6 +115,7 @@ internal sealed class AlbumService(
 
         await AddMediaToAlbumCoreAsync(album, mediaIds, caller, cancellationToken);
         await albumRepository.SaveChangesAsync(cancellationToken);
+        await InvalidateAlbumAsync(album);
     }
 
     public async Task AssignAudioCategoryAsync(
@@ -126,6 +136,7 @@ internal sealed class AlbumService(
         var album = await GetOrCreateSystemAudioCategoryAlbumAsync(scope, caller, categoryKey, cancellationToken);
         await AddMediaToAlbumCoreAsync(album, mediaIds, caller, cancellationToken);
         await albumRepository.SaveChangesAsync(cancellationToken);
+        await InvalidateAlbumAsync(album);
     }
 
     public async Task DeleteMediaFromAlbumAsync(WorkspaceScope? scope, Guid albumId, IEnumerable<Guid> mediaIds, CallerContext caller, CancellationToken cancellationToken = default)
@@ -152,46 +163,54 @@ internal sealed class AlbumService(
         }
 
         await albumRepository.SaveChangesAsync(cancellationToken);
+        await InvalidateAlbumAsync(album);
     }
 
     public async Task<IReadOnlyList<AlbumDto>> ListAlbumsAsync(WorkspaceScope scope, CallerContext caller, bool includeSystem = false, CancellationToken cancellationToken = default)
     {
-        var albums = await albumRepository.ListByWorkspaceAsync(OwnerKindOf(scope), scope.OwnerId, caller.UserId, includeSystem, cancellationToken);
-        albums = albums
-            .Where(album => album.OwnerKind == OwnerKindOf(scope) && album.OwnerId == scope.OwnerId)
-            .ToList();
-        if (!includeSystem)
+        await RequireWorkspaceAccessAsync(scope, caller, cancellationToken);
+        async Task<IReadOnlyList<AlbumDto>> Load(CancellationToken ct)
         {
-            albums = albums
-                .Where(album => album.Kind != AlbumKind.Audio || TryGetReservedAudioCategory(album.Name) is null)
-                .ToList();
+            var albums = await albumRepository.ListByWorkspaceAsync(OwnerKindOf(scope), scope.OwnerId, caller.UserId, includeSystem, ct);
+            albums = albums.Where(album => album.OwnerKind == OwnerKindOf(scope) && album.OwnerId == scope.OwnerId).ToList();
+            if (!includeSystem)
+            {
+                albums = albums.Where(album => album.Kind != AlbumKind.Audio || TryGetReservedAudioCategory(album.Name) is null).ToList();
+            }
+            if (scope.IsStudio && !caller.IsStudioOwner(scope.OwnerId))
+            {
+                albums = await FilterVisibleAsync(albums, caller, ct);
+            }
+            var flags = scope.IsStudio
+                ? new Dictionary<Guid, bool>()
+                : await albumRepository.GetFavoriteFlagsAsync(albums.Select(album => album.Id), caller.UserId, ct);
+            var mediaCounts = await albumRepository.GetMediaCountsAsync(albums.Select(album => album.Id), ct);
+            return albums.Select(album => ToDto(album, flags.GetValueOrDefault(album.Id), mediaCounts.GetValueOrDefault(album.Id))).ToList();
         }
-
-        if (scope.IsStudio && !caller.IsStudioOwner(scope.OwnerId))
-        {
-            albums = await FilterVisibleAsync(albums, caller, cancellationToken);
-        }
-
-        var flags = scope.IsStudio
-            ? new Dictionary<Guid, bool>()
-            : await albumRepository.GetFavoriteFlagsAsync(albums.Select(album => album.Id), caller.UserId, cancellationToken);
-        var mediaCounts = await albumRepository.GetMediaCountsAsync(albums.Select(album => album.Id), cancellationToken);
-        return albums.Select(album => ToDto(album, flags.GetValueOrDefault(album.Id), mediaCounts.GetValueOrDefault(album.Id))).ToList();
+        return await GetAlbumListCachedAsync(scope, caller.UserId, includeSystem, Load, cancellationToken);
     }
 
     public async Task<IReadOnlyList<AlbumDto>> ListSharedWithMeAsync(
         Guid userId,
         CancellationToken cancellationToken = default)
     {
-        var items = await albumRepository.ListSharedWithUserAsync(userId, cancellationToken);
-        var flags = await albumRepository.GetFavoriteFlagsAsync(items.Select(item => item.Album.Id), userId, cancellationToken);
-        var mediaCounts = await albumRepository.GetMediaCountsAsync(items.Select(item => item.Album.Id), cancellationToken);
-        var owners = await GetUserOwnerSummariesAsync(items.Select(item => item.Album), cancellationToken);
-        return items.Select(item => ToDto(
-            item.Album,
-            flags.GetValueOrDefault(item.Album.Id),
-            mediaCounts.GetValueOrDefault(item.Album.Id),
-            owners.GetValueOrDefault(item.Album.OwnerId))).ToList();
+        async Task<IReadOnlyList<AlbumDto>> Load(CancellationToken ct)
+        {
+            var items = await albumRepository.ListSharedWithUserAsync(userId, ct);
+            var flags = await albumRepository.GetFavoriteFlagsAsync(items.Select(item => item.Album.Id), userId, ct);
+            var mediaCounts = await albumRepository.GetMediaCountsAsync(items.Select(item => item.Album.Id), ct);
+            var owners = await GetUserOwnerSummariesAsync(items.Select(item => item.Album), ct);
+            return items.Select(item => ToDto(item.Album, flags.GetValueOrDefault(item.Album.Id),
+                mediaCounts.GetValueOrDefault(item.Album.Id), owners.GetValueOrDefault(item.Album.OwnerId))).ToList();
+        }
+        if (!cache.IsEnabled(_caching.Albums)) return await Load(cancellationToken);
+        var generation = await generations.GetAsync("albums", "shared-global", cancellationToken);
+        var mediaGeneration = await generations.GetAsync("media-projection", "global", cancellationToken);
+        if (generation is null || mediaGeneration is null) return await Load(cancellationToken);
+        var key = BusinessCacheKey.Create(cacheKeys, "album-list", "owner", "shared", userId,
+            "viewer", userId, "include-system", false, "gen", generation, "media-gen", mediaGeneration);
+        return await cache.GetOrCreateAsync("albums", "shared", _caching.Albums, key,
+            TimeSpan.FromSeconds(_caching.Albums.TtlSeconds), Load, cancellationToken);
     }
 
     public async Task<PagedResult<MediaDto>> ListAlbumMediaAsync(WorkspaceScope? scope, Guid albumId, CallerContext caller, bool includeSystem = false, CancellationToken cancellationToken = default)
@@ -206,43 +225,38 @@ internal sealed class AlbumService(
             throw DomainException.NotFound("Album not found");
         }
 
+        await EnsurePersistedStudioMembershipAsync(album, caller, cancellationToken);
         await RequireReadAsync(album, caller, cancellationToken);
 
-        var media = await albumRepository.ListAlbumMediaAsync(albumId, cancellationToken);
-        if (album.OwnerKind == OwnerKind.Studio && !caller.IsStudioOwner(album.OwnerId))
+        async Task<PagedResult<MediaDto>> Load(CancellationToken ct)
         {
-            var visible = new List<Models.Media>();
-            foreach (var item in media)
+            var media = await albumRepository.ListAlbumMediaAsync(albumId, ct);
+            if ((album.OwnerKind == OwnerKind.Studio && !caller.IsStudioOwner(album.OwnerId))
+                || (album.OwnerKind == OwnerKind.User && !caller.OwnsAsUser(album.OwnerId)))
             {
-                var access = await mediaRepository.GetMediaUserAsync(item.Id, caller.UserId, cancellationToken);
-                if (access?.IsHidden != true)
+                var visible = new List<Models.Media>();
+                foreach (var item in media)
                 {
-                    visible.Add(item);
+                    var access = await mediaRepository.GetMediaUserAsync(item.Id, caller.UserId, ct);
+                    if (access?.IsHidden != true) visible.Add(item);
                 }
+                media = visible;
             }
 
-            media = visible;
-        }
-        else if (album.OwnerKind == OwnerKind.User && !caller.OwnsAsUser(album.OwnerId))
-        {
-            var visible = new List<Models.Media>();
-            foreach (var item in media)
-            {
-                var access = await mediaRepository.GetMediaUserAsync(item.Id, caller.UserId, cancellationToken);
-                if (access?.IsHidden != true)
-                {
-                    visible.Add(item);
-                }
-            }
-
-            media = visible;
+            var owners = await GetUserOwnerSummariesAsync(media, ct);
+            var dtos = media.Select(item => MediaService.ToDto(item, owner: owners.GetValueOrDefault(item.OwnerId))).ToList();
+            return new PagedResult<MediaDto>(dtos, 1, dtos.Count > 0 ? dtos.Count : 1, dtos.Count);
         }
 
-        var owners = await GetUserOwnerSummariesAsync(media, cancellationToken);
-        var dtos = media.Select(item => MediaService.ToDto(item, owner: owners.GetValueOrDefault(item.OwnerId))).ToList();
-        
-        // Return as PagedResult to match existing patterns, even though we just fetched all for now.
-        return new PagedResult<MediaDto>(dtos, 1, dtos.Count > 0 ? dtos.Count : 1, dtos.Count);
+        if (!cache.IsEnabled(_caching.Albums)) return await Load(cancellationToken);
+        var albumGeneration = await generations.GetAsync("albums", $"album-{album.Id:N}", cancellationToken);
+        var mediaGeneration = await generations.GetAsync("media-projection", "global", cancellationToken);
+        if (albumGeneration is null || mediaGeneration is null) return await Load(cancellationToken);
+        var key = BusinessCacheKey.Create(cacheKeys, "album-media", "album", album.Id, "viewer", caller.UserId,
+            "include-system", includeSystem, "gen", albumGeneration, "media-gen", mediaGeneration);
+        return await cache.GetOrCreateAsync("albums", "media", _caching.Albums, key,
+            TimeSpan.FromSeconds(_caching.Albums.TtlSeconds), Load, cancellationToken,
+            result => result.Items.All(item => item.Pipeline.Terminal));
     }
 
     public async Task<AlbumDto> SetFavoriteAsync(
@@ -272,6 +286,7 @@ internal sealed class AlbumService(
             albumUser.IsFavorite = request.IsFavorite;
             albumUser.UpdatedAt = DateTimeOffset.UtcNow;
             await albumRepository.SaveChangesAsync(cancellationToken);
+            await InvalidateAlbumAsync(album);
         }
 
         var mediaCount = await GetMediaCountAsync(album.Id, cancellationToken);
@@ -327,6 +342,7 @@ internal sealed class AlbumService(
         }
 
         await albumRepository.SaveChangesAsync(cancellationToken);
+        await InvalidateAlbumAsync(album, affectsMediaVisibility: true);
         await notifications.CreateAsync(
             invitee.Id,
             null,
@@ -357,6 +373,7 @@ internal sealed class AlbumService(
         {
             albumRepository.RemoveAlbumUser(share);
             await albumRepository.SaveChangesAsync(cancellationToken);
+            await InvalidateAlbumAsync(album, affectsMediaVisibility: true);
         }
     }
 
@@ -410,6 +427,7 @@ internal sealed class AlbumService(
         }
 
         await albumRepository.SaveChangesAsync(cancellationToken);
+        await InvalidateAlbumAsync(album, affectsMediaVisibility: true);
         return await BuildAccessRowsAsync(album, caller, cancellationToken);
     }
 
@@ -511,6 +529,66 @@ internal sealed class AlbumService(
             };
 
             albumRepository.AddAlbumMedia(newAlbumMedia);
+        }
+    }
+
+    private async Task RequireWorkspaceAccessAsync(
+        WorkspaceScope scope,
+        CallerContext caller,
+        CancellationToken cancellationToken)
+    {
+        if (!scope.IsStudio)
+        {
+            if (!caller.OwnsAsUser(scope.OwnerId)) throw DomainException.Forbidden("You do not have access to this workspace.");
+            return;
+        }
+        if (await auth.GetStudioMemberAsync(scope.OwnerId, caller.UserId, cancellationToken) is null)
+        {
+            throw DomainException.Forbidden("You are not a member of this studio.");
+        }
+    }
+
+    private async Task EnsurePersistedStudioMembershipAsync(
+        Album album,
+        CallerContext caller,
+        CancellationToken cancellationToken)
+    {
+        if (album.OwnerKind == OwnerKind.Studio
+            && await auth.GetStudioMemberAsync(album.OwnerId, caller.UserId, cancellationToken) is null)
+        {
+            throw DomainException.Forbidden("You are not a member of this studio.");
+        }
+    }
+
+    private async Task<IReadOnlyList<AlbumDto>> GetAlbumListCachedAsync(
+        WorkspaceScope scope,
+        Guid viewerId,
+        bool includeSystem,
+        Func<CancellationToken, Task<IReadOnlyList<AlbumDto>>> factory,
+        CancellationToken cancellationToken)
+    {
+        if (!cache.IsEnabled(_caching.Albums)) return await factory(cancellationToken);
+        var generation = await generations.GetAsync(
+            "albums", $"owner-{OwnerKindOf(scope)}-{scope.OwnerId:N}", cancellationToken);
+        var mediaGeneration = await generations.GetAsync("media-projection", "global", cancellationToken);
+        if (generation is null || mediaGeneration is null) return await factory(cancellationToken);
+        var key = BusinessCacheKey.Create(cacheKeys, "album-list", "owner", OwnerKindOf(scope), scope.OwnerId,
+            "viewer", viewerId, "include-system", includeSystem, "gen", generation, "media-gen", mediaGeneration);
+        return await cache.GetOrCreateAsync("albums", "list", _caching.Albums, key,
+            TimeSpan.FromSeconds(_caching.Albums.TtlSeconds), factory, cancellationToken);
+    }
+
+    private async Task InvalidateAlbumAsync(Album album, bool affectsMediaVisibility = false)
+    {
+        if (cache.IsEnabled(_caching.Albums))
+        {
+            _ = await generations.BumpAsync("albums", $"album-{album.Id:N}");
+            _ = await generations.BumpAsync("albums", $"owner-{album.OwnerKind}-{album.OwnerId:N}");
+            _ = await generations.BumpAsync("albums", "shared-global");
+        }
+        if (affectsMediaVisibility && cache.IsEnabled(_caching.Media))
+        {
+            _ = await generations.BumpAsync("media", "shared-global");
         }
     }
 

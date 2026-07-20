@@ -14,7 +14,7 @@ public interface ITimelineService
 
     Task<TimelineDocumentDto> SaveCurrentDocumentAsync(Guid projectId, CallerContext caller, SaveTimelineDocumentRequest request, CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<TimelineDto>> ListByProjectAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TimelineDto>> ListByProjectAsync(Guid projectId, CallerContext caller, CancellationToken cancellationToken = default);
 
     Task<TimelineDto> CreateAsync(CreateTimelineRequest request, CancellationToken cancellationToken = default);
 

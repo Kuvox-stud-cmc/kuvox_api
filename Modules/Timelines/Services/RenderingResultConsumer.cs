@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Kuvox.Api.Modules.Shared.Infrastructure;
 using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
+using Kuvox.Api.Modules.Shared.Infrastructure.Caching;
 using Kuvox.Api.Modules.Shared.Infrastructure.RabbitMQ;
 using Kuvox.Api.Modules.Timelines.Contracts;
 using Kuvox.Api.Modules.Timelines.Enums;
@@ -148,7 +149,7 @@ internal sealed class RenderingResultConsumer(
         BasicDeliverEventArgs ea,
         string queueName,
         string expectedEventType,
-        Func<ITimelineRepository, IRenderRealtimeNotifier, T, CancellationToken, Task> handle)
+        Func<ITimelineRepository, IRenderRealtimeNotifier, EditorDocumentCache, T, CancellationToken, Task> handle)
         where T : class
     {
         if (_channel is null)
@@ -168,7 +169,8 @@ internal sealed class RenderingResultConsumer(
             using var scope = scopeFactory.CreateScope();
             var timelines = scope.ServiceProvider.GetRequiredService<ITimelineRepository>();
             var realtime = scope.ServiceProvider.GetRequiredService<IRenderRealtimeNotifier>();
-            await handle(timelines, realtime, message, CancellationToken.None);
+            var cache = scope.ServiceProvider.GetRequiredService<EditorDocumentCache>();
+            await handle(timelines, realtime, cache, message, CancellationToken.None);
             await _channel.BasicAckAsync(ea.DeliveryTag, multiple: false);
         }
         catch (JsonException ex)
@@ -192,6 +194,14 @@ internal sealed class RenderingResultConsumer(
         ITimelineRepository timelines,
         IRenderRealtimeNotifier realtime,
         RenderingStartedEvent started,
+        CancellationToken cancellationToken) =>
+        await ApplyStartedAsync(timelines, realtime, null, started, cancellationToken);
+
+    internal static async Task ApplyStartedAsync(
+        ITimelineRepository timelines,
+        IRenderRealtimeNotifier realtime,
+        EditorDocumentCache? cache,
+        RenderingStartedEvent started,
         CancellationToken cancellationToken)
     {
         var job = await timelines.GetRenderJobByIdAsync(started.RenderJobId, cancellationToken)
@@ -201,16 +211,30 @@ internal sealed class RenderingResultConsumer(
             return;
         }
 
+        var priorStatus = job.Status;
+        var priorUpdatedAt = job.UpdatedAt;
         job.Status = RenderStatus.Rendering;
         job.StartedAt ??= started.StartedAt;
         job.UpdatedAt = started.OccurredAt;
         await timelines.SaveChangesAsync(cancellationToken);
+        if (cache is not null)
+        {
+            await cache.DeleteRenderJobAsync(job.Id, priorStatus.ToString().ToLowerInvariant(), priorUpdatedAt);
+        }
         await realtime.RenderJobUpdatedAsync(job, cancellationToken);
     }
 
     internal static async Task ApplyCompletedAsync(
         ITimelineRepository timelines,
         IRenderRealtimeNotifier realtime,
+        RenderingCompletedEvent completed,
+        CancellationToken cancellationToken) =>
+        await ApplyCompletedAsync(timelines, realtime, null, completed, cancellationToken);
+
+    internal static async Task ApplyCompletedAsync(
+        ITimelineRepository timelines,
+        IRenderRealtimeNotifier realtime,
+        EditorDocumentCache? cache,
         RenderingCompletedEvent completed,
         CancellationToken cancellationToken)
     {
@@ -226,6 +250,8 @@ internal sealed class RenderingResultConsumer(
             return;
         }
 
+        var priorStatus = job.Status;
+        var priorUpdatedAt = job.UpdatedAt;
         job.Status = RenderStatus.Completed;
         job.OutputBucketName = completed.OutputBucketName;
         job.OutputStorageKey = completed.OutputStorageKey;
@@ -236,12 +262,24 @@ internal sealed class RenderingResultConsumer(
         job.ErrorMessage = null;
         job.UpdatedAt = completed.OccurredAt;
         await timelines.SaveChangesAsync(cancellationToken);
+        if (cache is not null)
+        {
+            await cache.DeleteRenderJobAsync(job.Id, priorStatus.ToString().ToLowerInvariant(), priorUpdatedAt);
+        }
         await realtime.RenderJobUpdatedAsync(job, cancellationToken);
     }
 
     internal static async Task ApplyFailedAsync(
         ITimelineRepository timelines,
         IRenderRealtimeNotifier realtime,
+        RenderingFailedEvent failed,
+        CancellationToken cancellationToken) =>
+        await ApplyFailedAsync(timelines, realtime, null, failed, cancellationToken);
+
+    internal static async Task ApplyFailedAsync(
+        ITimelineRepository timelines,
+        IRenderRealtimeNotifier realtime,
+        EditorDocumentCache? cache,
         RenderingFailedEvent failed,
         CancellationToken cancellationToken)
     {
@@ -252,12 +290,18 @@ internal sealed class RenderingResultConsumer(
             return;
         }
 
+        var priorStatus = job.Status;
+        var priorUpdatedAt = job.UpdatedAt;
         job.Status = RenderStatus.Failed;
         job.ErrorCode = failed.ErrorCode;
         job.ErrorMessage = failed.ErrorMessage;
         job.FinishedAt = failed.FinishedAt;
         job.UpdatedAt = failed.OccurredAt;
         await timelines.SaveChangesAsync(cancellationToken);
+        if (cache is not null)
+        {
+            await cache.DeleteRenderJobAsync(job.Id, priorStatus.ToString().ToLowerInvariant(), priorUpdatedAt);
+        }
         await realtime.RenderJobUpdatedAsync(job, cancellationToken);
     }
 

@@ -64,3 +64,4 @@ docker-compose.override.yml
 
 .claude
 .codex-obj
+.ruff_cache

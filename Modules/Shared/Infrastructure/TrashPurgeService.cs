@@ -1,6 +1,9 @@
 using Kuvox.Api.Modules.Media.Contracts;
 using Kuvox.Api.Modules.Media.Repositories;
 using Kuvox.Api.Modules.Projects.Repositories;
+using Kuvox.Api.Modules.Projects.Contracts;
+using Kuvox.Api.Modules.Shared.Infrastructure.Caching;
+using Microsoft.Extensions.Options;
 using MediatR;
 
 namespace Kuvox.Api.Modules.Shared.Infrastructure;
@@ -63,6 +66,9 @@ public sealed class TrashPurgeService(IServiceProvider services, ILogger<TrashPu
         var projects = sp.GetRequiredService<IProjectRepository>();
         var media = sp.GetRequiredService<IMediaRepository>();
         var mediator = sp.GetRequiredService<IMediator>();
+        var cache = sp.GetRequiredService<BusinessCache>();
+        var generations = sp.GetRequiredService<CacheGenerationManager>();
+        var caching = sp.GetRequiredService<IOptions<CachingOptions>>().Value;
 
         var staleProjects = await projects.ListDeletedBeforeAsync(cutoff, cancellationToken);
         if (staleProjects.Count > 0)
@@ -73,6 +79,19 @@ public sealed class TrashPurgeService(IServiceProvider services, ILogger<TrashPu
             }
 
             await projects.SaveChangesAsync(cancellationToken);
+            if (cache.IsEnabled(caching.Projects))
+            {
+                foreach (var project in staleProjects)
+                {
+                    _ = await generations.BumpAsync("projects", $"project-{project.Id:N}");
+                    _ = await generations.BumpAsync("projects", $"owner-{project.OwnerKind}-{project.OwnerId:N}");
+                    if (project.OwnerKind == Modules.Projects.Enums.OwnerKind.Studio)
+                    {
+                        await mediator.Publish(new ProjectSummaryChangedEvent(project.OwnerId), cancellationToken);
+                    }
+                }
+                _ = await generations.BumpAsync("projects", "shared-global");
+            }
 
             logger.LogInformation(
                 "[TrashPurge] purged {Count} project(s) older than {Days}d.",
@@ -91,7 +110,21 @@ public sealed class TrashPurgeService(IServiceProvider services, ILogger<TrashPu
 
             foreach (var item in staleMedia)
             {
+                if (cache.IsEnabled(caching.Media))
+                {
+                    _ = await generations.BumpAsync("media", $"media-{item.Id:N}");
+                    _ = await generations.BumpAsync("media", $"owner-{item.OwnerKind}-{item.OwnerId:N}");
+                }
+                if (cache.IsEnabled(caching.StorageUsage))
+                {
+                    _ = await generations.BumpAsync("storage-usage", $"owner-{item.OwnerKind}-{item.OwnerId:N}");
+                }
+                await mediator.Publish(new MediaProjectionChangedEvent(item.Id), cancellationToken);
                 await mediator.Publish(new MediaDeletedEvent(item.Id), cancellationToken);
+            }
+            if (cache.IsEnabled(caching.Media))
+            {
+                _ = await generations.BumpAsync("media", "shared-global");
             }
 
             logger.LogInformation(

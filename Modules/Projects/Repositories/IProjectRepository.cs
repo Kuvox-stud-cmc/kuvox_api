@@ -46,6 +46,10 @@ internal interface IProjectRepository
 
     Task<ImageComposition?> GetImageCompositionAsync(Guid projectId, CancellationToken cancellationToken = default);
 
+    Task<ImageCompositionIdentity?> GetImageCompositionIdentityAsync(Guid projectId, CancellationToken cancellationToken = default);
+
+    Task<ImageCompositionRevision?> GetImageCompositionRevisionAsync(Guid projectId, int revisionNumber, CancellationToken cancellationToken = default);
+
     Task AddAsync(Project project, CancellationToken cancellationToken = default);
 
     Task AddImageCompositionAsync(ImageComposition composition, CancellationToken cancellationToken = default);
@@ -62,3 +66,5 @@ internal interface IProjectRepository
 }
 
 internal sealed record ProjectMediaRow(Guid ProjectId, Guid MediaId, MediaKind Kind, DateTimeOffset CreatedAt);
+
+internal sealed record ImageCompositionIdentity(Guid CompositionId, Guid ProjectId, int RevisionNumber);

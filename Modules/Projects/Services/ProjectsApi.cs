@@ -1,3 +1,4 @@
+using Kuvox.Api.Modules.Auth.Contracts;
 using Kuvox.Api.Modules.Projects.Contracts;
 using Kuvox.Api.Modules.Projects.Enums;
 using Kuvox.Api.Modules.Projects.Models;
@@ -7,7 +8,7 @@ using Kuvox.Api.Modules.Shared.Infrastructure;
 namespace Kuvox.Api.Modules.Projects.Services;
 
 /// <summary>Implements the public <see cref="IProjectsApi"/> read facade (Rule 2). Internal (Rule 1).</summary>
-internal sealed class ProjectsApi(IProjectRepository projects) : IProjectsApi
+internal sealed class ProjectsApi(IProjectRepository projects, IAuthApi auth) : IProjectsApi
 {
     public Task<bool> ProjectExistsAsync(Guid projectId, CancellationToken cancellationToken = default) =>
         projects.ExistsAsync(projectId, cancellationToken);
@@ -26,6 +27,7 @@ internal sealed class ProjectsApi(IProjectRepository projects) : IProjectsApi
         CancellationToken cancellationToken = default)
     {
         var project = await LoadLiveAsync(projectId, cancellationToken);
+        await EnsurePersistedStudioMembershipAsync(project, caller, cancellationToken);
         if (!await CanAccessAsync(project, caller, cancellationToken))
         {
             throw DomainException.Forbidden("You do not have access to this project.");
@@ -40,6 +42,7 @@ internal sealed class ProjectsApi(IProjectRepository projects) : IProjectsApi
         CancellationToken cancellationToken = default)
     {
         var project = await LoadLiveAsync(projectId, cancellationToken);
+        await EnsurePersistedStudioMembershipAsync(project, caller, cancellationToken);
         if (!await CanWriteAsync(project, caller, cancellationToken))
         {
             throw DomainException.Forbidden("You do not have permission to modify this project.");
@@ -73,6 +76,18 @@ internal sealed class ProjectsApi(IProjectRepository projects) : IProjectsApi
         return project.DeletedAt is not null
             ? throw DomainException.NotFound("Project not found.")
             : project;
+    }
+
+    private async Task EnsurePersistedStudioMembershipAsync(
+        Project project,
+        CallerContext caller,
+        CancellationToken cancellationToken)
+    {
+        if (project.OwnerKind == OwnerKind.Studio
+            && await auth.GetStudioMemberAsync(project.OwnerId, caller.UserId, cancellationToken) is null)
+        {
+            throw DomainException.Forbidden("You are not a member of this studio.");
+        }
     }
 
     private async Task<bool> CanWriteAsync(Project project, CallerContext caller, CancellationToken cancellationToken)

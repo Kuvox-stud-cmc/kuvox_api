@@ -1,10 +1,13 @@
 using Kuvox.Api.Modules.Notifications.Enums;
 using Kuvox.Api.Modules.Notifications.Models;
 using Kuvox.Api.Modules.Notifications.Repositories;
+using Kuvox.Api.Modules.Notifications.Services;
 
 namespace Kuvox.Api.Modules.Notifications;
 
-internal sealed class NotificationsApi(INotificationsRepository notifications) : INotificationsApi
+internal sealed class NotificationsApi(
+    INotificationsRepository notifications,
+    NotificationCacheInvalidator invalidator) : INotificationsApi
 {
     public async Task CreateAsync(
         Guid userId,
@@ -28,5 +31,6 @@ internal sealed class NotificationsApi(INotificationsRepository notifications) :
             LinkUrl = linkUrl,
         }, cancellationToken);
         await notifications.SaveChangesAsync(cancellationToken);
+        await invalidator.InvalidateAsync(userId);
     }
 }

@@ -29,6 +29,13 @@ public interface IProjectService
 
     Task<ImageCompositionDto> SaveImageCompositionAsync(Guid id, CallerContext caller, SaveImageCompositionRequest request, CancellationToken cancellationToken = default);
 
+    Task<ProjectEditorBootstrapDto> GetEditorBootstrapAsync(
+        Guid id,
+        CallerContext caller,
+        int mediaPage,
+        int mediaPageSize,
+        CancellationToken cancellationToken = default);
+
     Task<ProjectDto> CreateAsync(WorkspaceScope scope, CallerContext caller, CreateProjectRequest request, CancellationToken cancellationToken = default);
 
     Task<ProjectDto> UpdateAsync(Guid id, CallerContext caller, UpdateProjectRequest request, CancellationToken cancellationToken = default);

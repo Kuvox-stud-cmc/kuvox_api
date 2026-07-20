@@ -5,6 +5,10 @@ using Kuvox.Api.Modules.Auth.Services;
 using Kuvox.Api.Modules.Projects;
 using Kuvox.Api.Modules.Projects.Repositories;
 using Kuvox.Api.Modules.Shared.Infrastructure;
+using Kuvox.Api.Modules.Shared.Infrastructure.Caching;
+using Kuvox.Api.Modules.Shared.Infrastructure.Metrics;
+using Kuvox.Api.Modules.Shared.Infrastructure.Health;
+using Kuvox.Api.Modules.Shared.Infrastructure.Http;
 using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
 using Kuvox.Api.Modules.Shared.Infrastructure.RabbitMQ;
 using Kuvox.Api.Modules.Timelines;
@@ -18,6 +22,8 @@ using Kuvox.Api.Modules.Tasks;
 using Kuvox.Api.Modules.Tasks.Repositories;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Prometheus;
 using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Context;
@@ -53,6 +59,9 @@ builder.Services.AddSerilog((sp, lc) =>
 builder.Services.AddOpenApi();
 builder.Services.AddControllers();
 builder.Services.AddSignalR();
+builder.Services.AddCachingInfrastructure(builder.Configuration);
+builder.Services.AddSingleton<DatabaseCommandMetricsInterceptor>();
+builder.Services.AddScoped<IPostgresReadinessProbe, PostgresReadinessProbe>();
 
 // Exception handlers run in registration order; the first to claim an exception wins, so the
 // specific ones (501 scaffolds, auth 401/4xx, domain 4xx) precede the catch-all 500.
@@ -140,7 +149,9 @@ app.Use(async (context, next) =>
 // One structured log line per request (method, path, status, elapsed).
 app.UseSerilogRequestLogging();
 
+app.UseMiddleware<DefaultCacheControlMiddleware>();
 app.UseExceptionHandler();
+app.UseMiddleware<HttpMetricsMiddleware>();
 
 // OpenAPI + Scalar docs. Served in every environment (gated by config flag
 // "Api:EnableDocs", default true) so the deployed instance exposes docs without
@@ -168,6 +179,10 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHub<MediaHub>("/hubs/media");
+if (app.Services.GetRequiredService<IOptions<MetricsOptions>>().Value.Enabled)
+{
+    app.MapMetrics("/metrics");
+}
 
 app.Run();
 

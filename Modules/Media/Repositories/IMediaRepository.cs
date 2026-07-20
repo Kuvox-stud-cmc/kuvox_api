@@ -28,7 +28,11 @@ internal interface IMediaRepository
     /// <summary>Media soft-deleted before <paramref name="cutoff"/> (for auto-purge).</summary>
     Task<IReadOnlyList<Models.Media>> ListDeletedBeforeAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<Models.Media>> ListStalePipelineAsync(DateTimeOffset cutoff, int batchSize, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<Models.Media>> ListPipelineRecoveryCandidatesAsync(
+        DateTimeOffset cutoff,
+        int batchSize,
+        bool ingestionEnabled,
+        CancellationToken cancellationToken = default);
 
     Task<MediaStorageUsageSummary> GetStorageUsageAsync(
         OwnerKind ownerKind, Guid ownerId, CancellationToken cancellationToken = default);

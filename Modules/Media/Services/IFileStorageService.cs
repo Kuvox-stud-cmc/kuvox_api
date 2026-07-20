@@ -28,6 +28,12 @@ public interface IFileStorageService
     CancellationToken cancellationToken = default
   );
 
+  Task<bool> ExistsAsync(
+    string bucketName,
+    string objectKey,
+    CancellationToken cancellationToken = default
+  );
+
   Task DeleteAsync(
     string bucketName,
     string objectKey,

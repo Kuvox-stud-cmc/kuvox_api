@@ -7,6 +7,7 @@ using Kuvox.Api.Modules.Media.Repositories;
 using Kuvox.Api.Modules.Notifications;
 using Kuvox.Api.Modules.Shared.Dtos;
 using Kuvox.Api.Modules.Shared.Infrastructure;
+using Kuvox.Api.Modules.Shared.Infrastructure.Caching;
 using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
 using Kuvox.Api.Modules.Shared.Infrastructure.RabbitMQ;
 using MediatR;
@@ -21,75 +22,105 @@ namespace Kuvox.Api.Modules.Media.Services;
 /// <see cref="MediaDeletedEvent"/> on permanent delete (Rule 4).
 /// </summary>
 internal sealed class MediaService(
-    IMediaRepository media, 
+    IMediaRepository media,
     IAlbumRepository albums,
-    IAuthApi auth, 
+    IAuthApi auth,
     INotificationsApi notifications,
     IMediator mediator,
     IFileStorageService storage,
     IMediaRealtimeNotifier realtime,
     IOptions<RabbitMqOptions> rabbitMqOptions,
-    ILogger<MediaService> logger)
+    ILogger<MediaService> logger,
+    BusinessCache cache,
+    CacheGenerationManager generations,
+    CacheKeyFactory cacheKeys,
+    IOptions<CachingOptions> cachingOptions,
+    IOptions<MediaFeatureOptions> mediaFeatures)
     : IMediaService
 {
     /// <summary>Trash auto-purge window (kept in sync with <c>TrashPurgeService</c>).</summary>
     public static readonly TimeSpan TrashRetention = TimeSpan.FromDays(7);
     private const long StudioStorageQuotaBytes = 500L * 1024L * 1024L * 1024L;
+    private readonly CachingOptions _caching = cachingOptions.Value;
+    private readonly MediaFeatureOptions _mediaFeatures = mediaFeatures.Value;
 
     public async Task<PagedResult<MediaDto>> ListByWorkspaceAsync(
         WorkspaceScope scope, CallerContext caller, int page, int pageSize, CancellationToken cancellationToken = default)
     {
         (page, pageSize) = Normalize(page, pageSize);
-        var (items, total) = await media.ListByWorkspaceAsync(OwnerKindOf(scope), scope.OwnerId, page, pageSize, cancellationToken);
-        if (scope.IsStudio && !caller.IsStudioOwner(scope.OwnerId))
+        await RequireWorkspaceAccessAsync(scope, caller, cancellationToken);
+        async Task<PagedResult<MediaDto>> Load(CancellationToken ct)
         {
-            items = await FilterVisibleAsync(items, caller, cancellationToken);
-            total = items.Count;
+            var (items, total) = await media.ListByWorkspaceAsync(OwnerKindOf(scope), scope.OwnerId, page, pageSize, ct);
+            if (scope.IsStudio && !caller.IsStudioOwner(scope.OwnerId))
+            {
+                items = await FilterVisibleAsync(items, caller, ct);
+                total = items.Count;
+            }
+            var flags = await media.GetFavoriteFlagsAsync(items.Select(item => item.Id), caller.UserId, ct);
+            return new PagedResult<MediaDto>(items.Select(item => ToDto(item, flags.GetValueOrDefault(item.Id))).ToList(), page, pageSize, total);
         }
-        var flags = await media.GetFavoriteFlagsAsync(items.Select(item => item.Id), caller.UserId, cancellationToken);
-        return new PagedResult<MediaDto>(items.Select(item => ToDto(item, flags.GetValueOrDefault(item.Id))).ToList(), page, pageSize, total);
+        return await GetMediaListCachedAsync(
+            scope, caller.UserId, "workspace", page, pageSize, Load, cancellationToken,
+            result => result.Items.All(item => item.Pipeline.Terminal));
     }
 
     public async Task<PagedResult<MediaDto>> ListSharedWithMeAsync(
         Guid userId, int page, int pageSize, CancellationToken cancellationToken = default)
     {
         (page, pageSize) = Normalize(page, pageSize);
-        var (items, total) = await media.ListSharedWithUserAsync(userId, page, pageSize, cancellationToken);
-        var flags = await media.GetFavoriteFlagsAsync(items.Select(item => item.Media.Id), userId, cancellationToken);
-        var owners = await GetUserOwnerSummariesAsync(items.Select(item => item.Media), cancellationToken);
-        return new PagedResult<MediaDto>(
-            items.Select(item => ToDto(
-                item.Media,
-                flags.GetValueOrDefault(item.Media.Id),
-                owners.GetValueOrDefault(item.Media.OwnerId))).ToList(),
-            page,
-            pageSize,
-            total);
+        async Task<PagedResult<MediaDto>> Load(CancellationToken ct)
+        {
+            var (items, total) = await media.ListSharedWithUserAsync(userId, page, pageSize, ct);
+            var flags = await media.GetFavoriteFlagsAsync(items.Select(item => item.Media.Id), userId, ct);
+            var owners = await GetUserOwnerSummariesAsync(items.Select(item => item.Media), ct);
+            return new PagedResult<MediaDto>(items.Select(item => ToDto(
+                item.Media, flags.GetValueOrDefault(item.Media.Id), owners.GetValueOrDefault(item.Media.OwnerId))).ToList(),
+                page, pageSize, total);
+        }
+        return await GetSharedMediaCachedAsync(
+            userId, page, pageSize, Load, cancellationToken,
+            result => result.Items.All(item => item.Pipeline.Terminal));
     }
 
     public async Task<PagedResult<MediaTrashItemDto>> ListTrashAsync(
         WorkspaceScope scope, CallerContext caller, int page, int pageSize, CancellationToken cancellationToken = default)
     {
         (page, pageSize) = Normalize(page, pageSize);
-        var (items, total) = await media.ListTrashAsync(OwnerKindOf(scope), scope.OwnerId, page, pageSize, cancellationToken);
-        if (scope.IsStudio && !caller.IsStudioOwner(scope.OwnerId))
+        await RequireWorkspaceAccessAsync(scope, caller, cancellationToken);
+        async Task<PagedResult<MediaTrashItemDto>> Load(CancellationToken ct)
         {
-            items = await FilterVisibleAsync(items, caller, cancellationToken);
-            total = items.Count;
+            var (items, total) = await media.ListTrashAsync(OwnerKindOf(scope), scope.OwnerId, page, pageSize, ct);
+            if (scope.IsStudio && !caller.IsStudioOwner(scope.OwnerId))
+            {
+                items = await FilterVisibleAsync(items, caller, ct);
+                total = items.Count;
+            }
+            return new PagedResult<MediaTrashItemDto>(items.Select(ToTrashDto).ToList(), page, pageSize, total);
         }
-        return new PagedResult<MediaTrashItemDto>(items.Select(ToTrashDto).ToList(), page, pageSize, total);
+        return await GetMediaListCachedAsync(scope, caller.UserId, "trash", page, pageSize, Load, cancellationToken);
     }
 
     public async Task<MediaDto> GetAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default)
     {
         var item = await LoadLiveAsync(id, cancellationToken);
+        await EnsurePersistedStudioMembershipAsync(item, caller, cancellationToken);
         if (!await CanAccessAsync(item, caller, cancellationToken))
         {
             throw DomainException.Forbidden("You do not have access to this media item.");
         }
 
-        var mediaUser = await media.GetMediaUserAsync(item.Id, caller.UserId, cancellationToken);
-        return ToDto(item, mediaUser?.IsFavorite ?? false);
+        var generation = await GetMediaGenerationAsync(item.Id, cancellationToken);
+        async Task<MediaDto> Load(CancellationToken ct)
+        {
+            var mediaUser = await media.GetMediaUserAsync(item.Id, caller.UserId, ct);
+            return ToDto(item, mediaUser?.IsFavorite ?? false);
+        }
+        if (generation is null) return await Load(cancellationToken);
+        var key = BusinessCacheKey.Create(cacheKeys, "media-detail", "media", id, "viewer", caller.UserId, "gen", generation);
+        return await cache.GetOrCreateAsync("media", "detail", _caching.Media, key,
+            TimeSpan.FromSeconds(_caching.Media.TtlSeconds), Load, cancellationToken,
+            result => result.Pipeline.Terminal);
     }
 
     public async Task<MediaObjectDownload> GetObjectAsync(
@@ -99,6 +130,7 @@ internal sealed class MediaService(
         CancellationToken cancellationToken = default)
     {
         var item = await LoadLiveAsync(id, cancellationToken);
+        await EnsurePersistedStudioMembershipAsync(item, caller, cancellationToken);
         if (!await CanAccessAsync(item, caller, cancellationToken))
         {
             throw DomainException.Forbidden("You do not have access to this media item.");
@@ -201,9 +233,9 @@ internal sealed class MediaService(
     }
 
     public async Task<MediaDto> UploadRawAsync(
-        WorkspaceScope scope, 
-        CallerContext caller, 
-        UploadMediaRequest request, 
+        WorkspaceScope scope,
+        CallerContext caller,
+        UploadMediaRequest request,
         CancellationToken cancellationToken = default)
     {
         if (!scope.IsStudio && !await auth.UserExistsAsync(scope.OwnerId, cancellationToken))
@@ -323,6 +355,7 @@ internal sealed class MediaService(
                 cancellationToken);
             await media.SaveChangesAsync(cancellationToken);
             await quotaTransaction.CommitAsync(cancellationToken);
+            await InvalidateMediaAsync(item);
 
             var dto = ToDto(item);
             await realtime.MediaUpdatedAsync(item, dto, "uploaded", cancellationToken);
@@ -349,16 +382,28 @@ internal sealed class MediaService(
     {
         return await GetStorageUsageAsync(
             new WorkspaceScope(IsStudio: false, OwnerId: caller.UserId),
+            caller,
             cancellationToken);
     }
 
     public async Task<MediaStorageUsageDto> GetStorageUsageAsync(
         WorkspaceScope scope,
+        CallerContext caller,
         CancellationToken cancellationToken = default)
     {
-        var plan = await ResolveStoragePlanAsync(scope, cancellationToken);
-        var usage = await media.GetStorageUsageAsync(OwnerKindOf(scope), scope.OwnerId, cancellationToken);
-        return ToStorageUsageDto(plan.Plan, plan.StorageBytes, usage);
+        await RequireWorkspaceAccessAsync(scope, caller, cancellationToken);
+        async Task<MediaStorageUsageDto> Load(CancellationToken ct)
+        {
+            var plan = await ResolveStoragePlanAsync(scope, ct);
+            var usage = await media.GetStorageUsageAsync(OwnerKindOf(scope), scope.OwnerId, ct);
+            return ToStorageUsageDto(plan.Plan, plan.StorageBytes, usage);
+        }
+        if (!cache.IsEnabled(_caching.StorageUsage)) return await Load(cancellationToken);
+        var generation = await generations.GetAsync("storage-usage", $"owner-{OwnerKindOf(scope)}-{scope.OwnerId:N}", cancellationToken);
+        if (generation is null) return await Load(cancellationToken);
+        var key = BusinessCacheKey.Create(cacheKeys, "storage-usage", "owner", OwnerKindOf(scope), scope.OwnerId, "gen", generation);
+        return await cache.GetOrCreateAsync("storage-usage", "usage", _caching.StorageUsage, key,
+            TimeSpan.FromSeconds(_caching.StorageUsage.TtlSeconds), Load, cancellationToken);
     }
 
     public async Task<MediaDto> SetFavoriteAsync(
@@ -382,6 +427,7 @@ internal sealed class MediaService(
                 mediaUser.IsFavorite = true;
                 await media.AddMediaUserAsync(mediaUser, cancellationToken);
                 await media.SaveChangesAsync(cancellationToken);
+                await InvalidateMediaAsync(item);
             }
 
             return ToDto(item, mediaUser?.IsFavorite ?? false);
@@ -392,6 +438,7 @@ internal sealed class MediaService(
             mediaUser.IsFavorite = request.IsFavorite;
             mediaUser.UpdatedAt = DateTimeOffset.UtcNow;
             await media.SaveChangesAsync(cancellationToken);
+            await InvalidateMediaAsync(item);
         }
 
         return ToDto(item, mediaUser.IsFavorite);
@@ -439,7 +486,9 @@ internal sealed class MediaService(
 
         item.StorageKey = canonical.ObjectKey;
         item.SizeBytes = canonical.SizeBytes;
-        item.Status = MediaStatus.Processing;
+        item.Status = _mediaFeatures.IngestionEnabled
+            ? MediaStatus.Processing
+            : MediaStatus.Ready;
         item.ErrorMessage = null;
         item.Codec = completed.Codec;
         item.UpdatedAt = DateTimeOffset.UtcNow;
@@ -480,38 +529,42 @@ internal sealed class MediaService(
             }
         }
 
-        var ingestionEvent = new IngestionRequestedEvent(
-            EventId: Guid.NewGuid(),
-            EventType: "ingestion.requested",
-            OccurredAt: DateTimeOffset.UtcNow,
-            MediaId: item.Id,
-            OwnerId: item.OwnerId,
-            OwnerKind: item.OwnerKind,
-            Kind: item.Kind,
-            Canonical: canonical,
-            Proxy: completed.Proxy,
-            Thumbnail: completed.Thumbnail,
-            DurationSeconds: completed.DurationSeconds,
-            Width: completed.Width,
-            Height: completed.Height,
-            FrameRate: completed.FrameRate,
-            Codec: completed.Codec
-        );
+        if (_mediaFeatures.IngestionEnabled)
+        {
+            var ingestionEvent = new IngestionRequestedEvent(
+                EventId: Guid.NewGuid(),
+                EventType: "ingestion.requested",
+                OccurredAt: DateTimeOffset.UtcNow,
+                MediaId: item.Id,
+                OwnerId: item.OwnerId,
+                OwnerKind: item.OwnerKind,
+                Kind: item.Kind,
+                Canonical: canonical,
+                Proxy: completed.Proxy,
+                Thumbnail: completed.Thumbnail,
+                DurationSeconds: completed.DurationSeconds,
+                Width: completed.Width,
+                Height: completed.Height,
+                FrameRate: completed.FrameRate,
+                Codec: completed.Codec
+            );
 
-        await media.EnqueueOutboxAsync(
-            OutboxMessage.Create(
-                dedupeKey: $"ingestion.requested:{item.Id}",
-                exchange: rabbitMqOptions.Value.ExchangeName,
-                routingKey: "ingestion.requested",
-                eventType: ingestionEvent.EventType,
-                payload: ingestionEvent),
-            cancellationToken);
+            await media.EnqueueOutboxAsync(
+                OutboxMessage.Create(
+                    dedupeKey: $"ingestion.requested:{item.Id}",
+                    exchange: rabbitMqOptions.Value.ExchangeName,
+                    routingKey: "ingestion.requested",
+                    eventType: ingestionEvent.EventType,
+                    payload: ingestionEvent),
+                cancellationToken);
+        }
 
         await media.SaveChangesAsync(cancellationToken);
+        await InvalidateMediaAsync(item);
         await realtime.MediaUpdatedAsync(
             item,
             ToDto(item),
-            "processing",
+            _mediaFeatures.IngestionEnabled ? "processing" : "ready",
             cancellationToken);
     }
 
@@ -536,6 +589,7 @@ internal sealed class MediaService(
             : failed.ErrorMessage;
         item.UpdatedAt = DateTimeOffset.UtcNow;
         await media.SaveChangesAsync(cancellationToken);
+        await InvalidateMediaAsync(item);
         await realtime.MediaUpdatedAsync(
             item,
             ToDto(item),
@@ -549,21 +603,31 @@ internal sealed class MediaService(
         IngestionCompletedEvent completed,
         CancellationToken cancellationToken = default)
     {
+        if (!_mediaFeatures.IngestionEnabled)
+        {
+            logger.LogInformation(
+                "[Media] Ignoring ingestion completion for media {MediaId} while ingestion is disabled.",
+                completed.MediaId);
+            return;
+        }
+
         var item = await media.GetByIdAsync(completed.MediaId, cancellationToken);
         if (item is null)
         {
             return;
         }
 
-        if (item.Status == MediaStatus.Ready)
+        if (item.Status == MediaStatus.Ready && item.SearchRevision > 0)
         {
             return;
         }
 
         item.Status = MediaStatus.Ready;
+        item.SearchRevision = checked(item.SearchRevision + 1);
         item.ErrorMessage = null;
         item.UpdatedAt = DateTimeOffset.UtcNow;
         await media.SaveChangesAsync(cancellationToken);
+        await InvalidateMediaAsync(item);
         await realtime.MediaUpdatedAsync(
             item,
             ToDto(item),
@@ -580,6 +644,14 @@ internal sealed class MediaService(
         IngestionFailedEvent failed,
         CancellationToken cancellationToken = default)
     {
+        if (!_mediaFeatures.IngestionEnabled)
+        {
+            logger.LogInformation(
+                "[Media] Ignoring ingestion failure for media {MediaId} while ingestion is disabled.",
+                failed.MediaId);
+            return;
+        }
+
         var item = await media.GetByIdAsync(failed.MediaId, cancellationToken);
         if (item is null)
         {
@@ -597,6 +669,7 @@ internal sealed class MediaService(
             : failed.ErrorMessage;
         item.UpdatedAt = DateTimeOffset.UtcNow;
         await media.SaveChangesAsync(cancellationToken);
+        await InvalidateMediaAsync(item);
         await realtime.MediaUpdatedAsync(
             item,
             ToDto(item),
@@ -639,6 +712,7 @@ internal sealed class MediaService(
         }
 
         await media.SaveChangesAsync(cancellationToken);
+        await InvalidateMediaAsync(item);
         await notifications.CreateAsync(
             invitee.Id,
             null,
@@ -658,6 +732,7 @@ internal sealed class MediaService(
         {
             media.RemoveMediaUser(share);
             await media.SaveChangesAsync(cancellationToken);
+            await InvalidateMediaAsync(item);
         }
     }
 
@@ -704,6 +779,7 @@ internal sealed class MediaService(
         }
 
         await media.SaveChangesAsync(cancellationToken);
+        await InvalidateMediaAsync(item);
         return await BuildAccessRowsAsync(item, caller, cancellationToken);
     }
 
@@ -715,6 +791,7 @@ internal sealed class MediaService(
         item.DeletedAt = DateTimeOffset.UtcNow;
         item.UpdatedAt = DateTimeOffset.UtcNow;
         await media.SaveChangesAsync(cancellationToken);
+        await InvalidateMediaAsync(item);
     }
 
     public async Task RestoreAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default)
@@ -726,6 +803,7 @@ internal sealed class MediaService(
         item.DeletedAt = null;
         item.UpdatedAt = DateTimeOffset.UtcNow;
         await media.SaveChangesAsync(cancellationToken);
+        await InvalidateMediaAsync(item);
     }
 
     public async Task PermanentDeleteAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default)
@@ -736,6 +814,7 @@ internal sealed class MediaService(
 
         media.Remove(item);
         await media.SaveChangesAsync(cancellationToken);
+        await InvalidateMediaAsync(item);
 
         foreach (var storedObject in StoredObjectsFor(item))
         {
@@ -944,6 +1023,101 @@ internal sealed class MediaService(
 
         var extension = Path.GetExtension(objectKey);
         return $"{baseName}{extension}";
+    }
+
+    private async Task RequireWorkspaceAccessAsync(
+        WorkspaceScope scope,
+        CallerContext caller,
+        CancellationToken cancellationToken)
+    {
+        if (!scope.IsStudio)
+        {
+            if (!caller.OwnsAsUser(scope.OwnerId))
+            {
+                throw DomainException.Forbidden("You do not have access to this workspace.");
+            }
+            return;
+        }
+
+        if (await auth.GetStudioMemberAsync(scope.OwnerId, caller.UserId, cancellationToken) is null)
+        {
+            throw DomainException.Forbidden("You are not a member of this studio.");
+        }
+    }
+
+    private async Task EnsurePersistedStudioMembershipAsync(
+        Models.Media item,
+        CallerContext caller,
+        CancellationToken cancellationToken)
+    {
+        if (item.OwnerKind == OwnerKind.Studio
+            && await auth.GetStudioMemberAsync(item.OwnerId, caller.UserId, cancellationToken) is null)
+        {
+            throw DomainException.Forbidden("You are not a member of this studio.");
+        }
+    }
+
+    private Task<string?> GetMediaGenerationAsync(Guid mediaId, CancellationToken cancellationToken) =>
+        cache.IsEnabled(_caching.Media)
+            ? generations.GetAsync("media", $"media-{mediaId:N}", cancellationToken)
+            : Task.FromResult<string?>(null);
+
+    private async Task<PagedResult<T>> GetMediaListCachedAsync<T>(
+        WorkspaceScope scope,
+        Guid viewerId,
+        string kind,
+        int page,
+        int pageSize,
+        Func<CancellationToken, Task<PagedResult<T>>> factory,
+        CancellationToken cancellationToken,
+        Func<PagedResult<T>, bool>? shouldCache = null)
+    {
+        if (!cache.IsEnabled(_caching.Media)) return await factory(cancellationToken);
+        var generation = await generations.GetAsync(
+            "media", $"owner-{OwnerKindOf(scope)}-{scope.OwnerId:N}", cancellationToken);
+        if (generation is null) return await factory(cancellationToken);
+        var key = BusinessCacheKey.Create(
+            cacheKeys, "media-list", "owner", OwnerKindOf(scope), scope.OwnerId, "viewer", viewerId,
+            "kind", kind, "page", page, "size", pageSize,
+            "filter", BusinessCacheKey.Hash("sort-updated-desc"), "gen", generation);
+        return await cache.GetOrCreateAsync(
+            "media", kind, _caching.Media, key, TimeSpan.FromSeconds(_caching.Media.TtlSeconds),
+            factory, cancellationToken, shouldCache);
+    }
+
+    private async Task<PagedResult<MediaDto>> GetSharedMediaCachedAsync(
+        Guid viewerId,
+        int page,
+        int pageSize,
+        Func<CancellationToken, Task<PagedResult<MediaDto>>> factory,
+        CancellationToken cancellationToken,
+        Func<PagedResult<MediaDto>, bool>? shouldCache = null)
+    {
+        if (!cache.IsEnabled(_caching.Media)) return await factory(cancellationToken);
+        var generation = await generations.GetAsync("media", "shared-global", cancellationToken);
+        if (generation is null) return await factory(cancellationToken);
+        var key = BusinessCacheKey.Create(
+            cacheKeys, "media-list", "owner", "shared", viewerId, "viewer", viewerId,
+            "kind", "shared", "page", page, "size", pageSize,
+            "filter", BusinessCacheKey.Hash("sort-updated-desc"), "gen", generation);
+        return await cache.GetOrCreateAsync(
+            "media", "shared", _caching.Media, key, TimeSpan.FromSeconds(_caching.Media.TtlSeconds),
+            factory, cancellationToken, shouldCache);
+    }
+
+    private async Task InvalidateMediaAsync(Models.Media item)
+    {
+        if (cache.IsEnabled(_caching.Media))
+        {
+            _ = await generations.BumpAsync("media", $"media-{item.Id:N}");
+            _ = await generations.BumpAsync("media", $"owner-{item.OwnerKind}-{item.OwnerId:N}");
+            _ = await generations.BumpAsync("media", "shared-global");
+        }
+        if (cache.IsEnabled(_caching.StorageUsage))
+        {
+            _ = await generations.BumpAsync("storage-usage", $"owner-{item.OwnerKind}-{item.OwnerId:N}");
+        }
+        await mediator.Publish(new MediaProjectionChangedEvent(item.Id));
     }
 
     private async Task<Models.Media> LoadLiveAsync(Guid id, CancellationToken cancellationToken)
@@ -1241,7 +1415,7 @@ internal sealed class MediaService(
         int? width = m switch { Video v => v.Width, Photo p => p.Width, _ => null };
         int? height = m switch { Video v => v.Height, Photo p => p.Height, _ => null };
         double? frameRate = m switch { Video v => v.FrameRate, _ => null };
-        
+
         return new(
             m.Id,
             m.OwnerId,

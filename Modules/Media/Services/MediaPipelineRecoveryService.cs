@@ -3,6 +3,8 @@ using Kuvox.Api.Modules.Media.Enums;
 using Kuvox.Api.Modules.Media.Repositories;
 using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
 using Kuvox.Api.Modules.Shared.Infrastructure.RabbitMQ;
+using Kuvox.Api.Modules.Shared.Infrastructure.Caching;
+using MediatR;
 using Microsoft.Extensions.Options;
 using MediaEntity = Kuvox.Api.Modules.Media.Models.Media;
 
@@ -11,10 +13,12 @@ namespace Kuvox.Api.Modules.Media.Services;
 internal sealed class MediaPipelineRecoveryService(
     IServiceScopeFactory scopeFactory,
     IOptions<MediaPipelineRecoveryOptions> options,
+    IOptions<MediaFeatureOptions> mediaFeatures,
     ILogger<MediaPipelineRecoveryService> logger)
     : BackgroundService
 {
     private readonly MediaPipelineRecoveryOptions _options = options.Value;
+    private readonly MediaFeatureOptions _mediaFeatures = mediaFeatures.Value;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -49,13 +53,22 @@ internal sealed class MediaPipelineRecoveryService(
     {
         using var scope = scopeFactory.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<IMediaRepository>();
+        var storage = scope.ServiceProvider.GetRequiredService<IFileStorageService>();
         var realtime = scope.ServiceProvider.GetRequiredService<IMediaRealtimeNotifier>();
         var rabbitMqOptions = scope.ServiceProvider.GetRequiredService<IOptions<RabbitMqOptions>>().Value;
+        var cache = scope.ServiceProvider.GetRequiredService<BusinessCache>();
+        var generations = scope.ServiceProvider.GetRequiredService<CacheGenerationManager>();
+        var caching = scope.ServiceProvider.GetRequiredService<IOptions<CachingOptions>>().Value;
+        var mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
 
         var now = DateTimeOffset.UtcNow;
         var cutoff = now - TimeSpan.FromMinutes(Math.Max(1, _options.StaleAfterMinutes));
         var batchSize = Math.Max(1, _options.BatchSize);
-        var staleItems = await repository.ListStalePipelineAsync(cutoff, batchSize, cancellationToken);
+        var staleItems = await repository.ListPipelineRecoveryCandidatesAsync(
+            cutoff,
+            batchSize,
+            _mediaFeatures.IngestionEnabled,
+            cancellationToken);
         if (staleItems.Count == 0)
         {
             return;
@@ -68,15 +81,51 @@ internal sealed class MediaPipelineRecoveryService(
             switch (item.Status)
             {
                 case MediaStatus.Uploaded:
-                    await RecoverUploadedAsync(repository, rabbitMqOptions, item, now, realtimeUpdates, cancellationToken);
+                    await RecoverUploadedAsync(
+                        repository,
+                        storage,
+                        rabbitMqOptions,
+                        item,
+                        now,
+                        _mediaFeatures.IngestionEnabled,
+                        realtimeUpdates,
+                        cancellationToken);
                     break;
                 case MediaStatus.Processing:
-                    await RecoverProcessingAsync(repository, rabbitMqOptions, item, now, realtimeUpdates, cancellationToken);
+                case MediaStatus.Failed when !_mediaFeatures.IngestionEnabled:
+                case MediaStatus.Ready when _mediaFeatures.IngestionEnabled && item.SearchRevision == 0:
+                    await RecoverProcessingAsync(
+                        repository,
+                        storage,
+                        rabbitMqOptions,
+                        item,
+                        now,
+                        _mediaFeatures.IngestionEnabled,
+                        realtimeUpdates,
+                        cancellationToken);
                     break;
             }
         }
 
         await repository.SaveChangesAsync(cancellationToken);
+
+        foreach (var item in staleItems)
+        {
+            if (cache.IsEnabled(caching.Media))
+            {
+                _ = await generations.BumpAsync("media", $"media-{item.Id:N}", CancellationToken.None);
+                _ = await generations.BumpAsync("media", $"owner-{item.OwnerKind}-{item.OwnerId:N}", CancellationToken.None);
+            }
+            if (cache.IsEnabled(caching.StorageUsage))
+            {
+                _ = await generations.BumpAsync("storage-usage", $"owner-{item.OwnerKind}-{item.OwnerId:N}", CancellationToken.None);
+            }
+            await mediator.Publish(new MediaProjectionChangedEvent(item.Id), CancellationToken.None);
+        }
+        if (cache.IsEnabled(caching.Media))
+        {
+            _ = await generations.BumpAsync("media", "shared-global", CancellationToken.None);
+        }
 
         foreach (var update in realtimeUpdates)
         {
@@ -92,9 +141,11 @@ internal sealed class MediaPipelineRecoveryService(
 
     private static async Task RecoverUploadedAsync(
         IMediaRepository repository,
+        IFileStorageService storage,
         RabbitMqOptions rabbitMqOptions,
         MediaEntity item,
         DateTimeOffset now,
+        bool ingestionEnabled,
         List<(MediaEntity Media, string Phase, string? ErrorCode, string? ErrorMessage)> realtimeUpdates,
         CancellationToken cancellationToken)
     {
@@ -102,9 +153,15 @@ internal sealed class MediaPipelineRecoveryService(
         {
             if (HasStorageObject(item.CanonicalBucketName, item.CanonicalStorageKey))
             {
-                item.Status = MediaStatus.Processing;
-                realtimeUpdates.Add((item, "processing", null, null));
-                await RecoverProcessingAsync(repository, rabbitMqOptions, item, now, realtimeUpdates, cancellationToken);
+                await RecoverProcessingAsync(
+                    repository,
+                    storage,
+                    rabbitMqOptions,
+                    item,
+                    now,
+                    ingestionEnabled,
+                    realtimeUpdates,
+                    cancellationToken);
                 return;
             }
 
@@ -141,16 +198,24 @@ internal sealed class MediaPipelineRecoveryService(
         item.UpdatedAt = now;
     }
 
-    private static async Task RecoverProcessingAsync(
+    internal static async Task RecoverProcessingAsync(
         IMediaRepository repository,
+        IFileStorageService storage,
         RabbitMqOptions rabbitMqOptions,
         MediaEntity item,
         DateTimeOffset now,
+        bool ingestionEnabled,
         List<(MediaEntity Media, string Phase, string? ErrorCode, string? ErrorMessage)> realtimeUpdates,
         CancellationToken cancellationToken)
     {
         if (!HasStorageObject(item.CanonicalBucketName, item.CanonicalStorageKey))
         {
+            if (item.Status is MediaStatus.Ready or MediaStatus.Failed)
+            {
+                item.UpdatedAt = now;
+                return;
+            }
+
             MarkFailed(
                 item,
                 now,
@@ -159,10 +224,45 @@ internal sealed class MediaPipelineRecoveryService(
             return;
         }
 
+        if (!await storage.ExistsAsync(
+            item.CanonicalBucketName!,
+            item.CanonicalStorageKey!,
+            cancellationToken))
+        {
+            if (item.Status is MediaStatus.Ready or MediaStatus.Failed)
+            {
+                item.UpdatedAt = now;
+                return;
+            }
+
+            MarkFailed(
+                item,
+                now,
+                "Media pipeline recovery could not resume ingestion because the canonical storage object is missing.",
+                realtimeUpdates);
+            return;
+        }
+
         item.StorageKey = item.CanonicalStorageKey!;
         if (item.CanonicalSizeBytes is { } canonicalSizeBytes)
         {
             item.SizeBytes = canonicalSizeBytes;
+        }
+
+        item.ErrorMessage = null;
+
+        if (!ingestionEnabled)
+        {
+            item.Status = MediaStatus.Ready;
+            item.UpdatedAt = now;
+            realtimeUpdates.Add((item, "ready", null, null));
+            return;
+        }
+
+        if (item.Status == MediaStatus.Uploaded)
+        {
+            item.Status = MediaStatus.Processing;
+            realtimeUpdates.Add((item, "processing", null, null));
         }
 
         var canonical = OptimizedObjectFrom(item.CanonicalBucketName, item.CanonicalStorageKey, item.CanonicalSizeBytes ?? item.SizeBytes, item.Kind)!;

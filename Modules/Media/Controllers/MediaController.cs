@@ -41,7 +41,7 @@ public sealed class MediaController(IMediaService media) : ControllerBase
     public Task<MediaStorageUsageDto> StorageUsage(
         [FromQuery] Guid? studioId,
         CancellationToken ct = default) =>
-        media.GetStorageUsageAsync(ResolveWorkspace(studioId), ct);
+        media.GetStorageUsageAsync(ResolveWorkspace(studioId), Caller(), ct);
 
     [HttpGet("{id:guid}")]
     public Task<MediaDto> Get(Guid id, CancellationToken ct) => media.GetAsync(id, Caller(), ct);
@@ -70,8 +70,8 @@ public sealed class MediaController(IMediaService media) : ControllerBase
     [HttpPost]
     [Consumes("multipart/form-data")]
     public Task<MediaDto> Upload(
-        [FromQuery] Guid? studioId, 
-        [FromForm] UploadMediaRequest request, 
+        [FromQuery] Guid? studioId,
+        [FromForm] UploadMediaRequest request,
         CancellationToken ct) =>
         media.UploadRawAsync(ResolveWorkspace(studioId), Caller(), request, ct);
 

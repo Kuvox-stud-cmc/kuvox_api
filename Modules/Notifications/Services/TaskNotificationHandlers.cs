@@ -6,7 +6,9 @@ using MediatR;
 
 namespace Kuvox.Api.Modules.Notifications.Services;
 
-internal sealed class TaskAssignedHandler(INotificationsRepository notifications)
+internal sealed class TaskAssignedHandler(
+    INotificationsRepository notifications,
+    NotificationCacheInvalidator invalidator)
     : INotificationHandler<TaskAssignedEvent>
 {
     public async Task Handle(TaskAssignedEvent notification, CancellationToken cancellationToken)
@@ -25,10 +27,16 @@ internal sealed class TaskAssignedHandler(INotificationsRepository notifications
         }
 
         await notifications.SaveChangesAsync(cancellationToken);
+        foreach (var userId in notification.AssigneeIds.Distinct())
+        {
+            await invalidator.InvalidateAsync(userId);
+        }
     }
 }
 
-internal sealed class TaskReviewStatusChangedHandler(INotificationsRepository notifications)
+internal sealed class TaskReviewStatusChangedHandler(
+    INotificationsRepository notifications,
+    NotificationCacheInvalidator invalidator)
     : INotificationHandler<TaskReviewStatusChangedEvent>
 {
     public async Task Handle(TaskReviewStatusChangedEvent notification, CancellationToken cancellationToken)
@@ -47,6 +55,10 @@ internal sealed class TaskReviewStatusChangedHandler(INotificationsRepository no
         }
 
         await notifications.SaveChangesAsync(cancellationToken);
+        foreach (var userId in notification.ReviewerIds.Distinct())
+        {
+            await invalidator.InvalidateAsync(userId);
+        }
     }
 
     private static string StatusLabel(TaskIssueStatus status) =>
@@ -59,7 +71,9 @@ internal sealed class TaskReviewStatusChangedHandler(INotificationsRepository no
         };
 }
 
-internal sealed class TaskCommentMentionedHandler(INotificationsRepository notifications)
+internal sealed class TaskCommentMentionedHandler(
+    INotificationsRepository notifications,
+    NotificationCacheInvalidator invalidator)
     : INotificationHandler<TaskCommentMentionedEvent>
 {
     public async Task Handle(TaskCommentMentionedEvent notification, CancellationToken cancellationToken)
@@ -78,5 +92,9 @@ internal sealed class TaskCommentMentionedHandler(INotificationsRepository notif
         }
 
         await notifications.SaveChangesAsync(cancellationToken);
+        foreach (var userId in notification.MentionedUserIds.Distinct())
+        {
+            await invalidator.InvalidateAsync(userId);
+        }
     }
 }

@@ -4,6 +4,7 @@ using Kuvox.Api.Modules.Media.Services;
 using Kuvox.Api.Modules.Projects.Contracts;
 using Kuvox.Api.Modules.Shared.Infrastructure;
 using Kuvox.Api.Modules.Shared.Infrastructure.Messaging;
+using Kuvox.Api.Modules.Shared.Infrastructure.Caching;
 using Kuvox.Api.Modules.Shared.Infrastructure.RabbitMQ;
 using Kuvox.Api.Modules.Timelines.Contracts;
 using Kuvox.Api.Modules.Timelines.Dtos;
@@ -20,6 +21,7 @@ internal sealed class TimelineService(
     IMediaApi media,
     IFileStorageService storage,
     IRenderRealtimeNotifier realtime,
+    EditorDocumentCache documentCache,
     IOptions<RabbitMqOptions> rabbitMqOptions,
     IOptions<StorageOptions> storageOptions,
     ILogger<TimelineService> logger) : ITimelineService
@@ -29,6 +31,7 @@ internal sealed class TimelineService(
     private readonly IMediaApi _media = media;
     private readonly IFileStorageService _storage = storage;
     private readonly IRenderRealtimeNotifier _realtime = realtime;
+    private readonly EditorDocumentCache _documentCache = documentCache;
     private readonly RabbitMqOptions _rabbitMqOptions = rabbitMqOptions.Value;
     private readonly StorageOptions _storageOptions = storageOptions.Value;
     private readonly ILogger<TimelineService> _logger = logger;
@@ -67,19 +70,39 @@ internal sealed class TimelineService(
         var project = await _projects.RequireReadAccessAsync(projectId, caller, cancellationToken);
         RequireVideoProject(project);
 
-        var timeline = await _timelines.GetByProjectAsync(project.Id, cancellationToken)
-            ?? throw DomainException.NotFound("Video timeline not found.");
-        var latestRevision = await _timelines.GetLatestRevisionAsync(timeline.Id, cancellationToken)
-            ?? throw DomainException.NotFound("Video timeline not found.");
+        if (!_documentCache.DocumentsEnabled)
+        {
+            var timeline = await _timelines.GetByProjectAsync(project.Id, cancellationToken)
+                ?? throw DomainException.NotFound("Video timeline not found.");
+            var latestRevision = await _timelines.GetLatestRevisionAsync(timeline.Id, cancellationToken)
+                ?? throw DomainException.NotFound("Video timeline not found.");
 
-        _logger.LogInformation(
-            "VideoTimelineGet ProjectId={ProjectId} TimelineId={TimelineId} RevisionId={RevisionId} RevisionNumber={RevisionNumber}",
+            return LogAndConvert(project.Id, timeline.Id, latestRevision);
+        }
+
+        var identity = await _timelines.GetCurrentRevisionIdentityAsync(project.Id, cancellationToken)
+            ?? throw DomainException.NotFound("Video timeline not found.");
+        return await _documentCache.GetTimelineDocumentAsync(
             project.Id,
-            timeline.Id,
-            latestRevision.Id,
-            latestRevision.RevisionNumber);
+            identity.RevisionNumber,
+            async ct =>
+            {
+                var revision = await _timelines.GetRevisionByIdAsync(identity.RevisionId, ct)
+                    ?? throw DomainException.NotFound("Video timeline not found.");
+                return LogAndConvert(project.Id, identity.TimelineId, revision);
+            },
+            cancellationToken);
 
-        return ToDocumentDto(project.Id, timeline.Id, latestRevision);
+        TimelineDocumentDto LogAndConvert(Guid currentProjectId, Guid timelineId, TimelineRevision revision)
+        {
+            _logger.LogInformation(
+                "VideoTimelineGet ProjectId={ProjectId} TimelineId={TimelineId} RevisionId={RevisionId} RevisionNumber={RevisionNumber}",
+                currentProjectId,
+                timelineId,
+                revision.Id,
+                revision.RevisionNumber);
+            return ToDocumentDto(currentProjectId, timelineId, revision);
+        }
     }
 
     public async Task<TimelineDocumentDto> SaveCurrentDocumentAsync(
@@ -155,11 +178,40 @@ internal sealed class TimelineService(
             operationCount,
             operationIds);
 
-        return ToDocumentDto(project.Id, timeline.Id, revision);
+        var result = ToDocumentDto(project.Id, timeline.Id, revision);
+        await _documentCache.WriteTimelineDocumentAsync(project.Id, revision.RevisionNumber, result);
+        await _documentCache.WriteTimelineListAsync(
+            project.Id,
+            revision.RevisionNumber,
+            (IReadOnlyList<TimelineDto>)[ToTimelineDto(timeline)]);
+        return result;
     }
 
-    public Task<IReadOnlyList<TimelineDto>> ListByProjectAsync(Guid projectId, CancellationToken cancellationToken = default) =>
-        throw new NotImplementedException();
+    public async Task<IReadOnlyList<TimelineDto>> ListByProjectAsync(
+        Guid projectId,
+        CallerContext caller,
+        CancellationToken cancellationToken = default)
+    {
+        var project = await _projects.RequireReadAccessAsync(projectId, caller, cancellationToken);
+        RequireVideoProject(project);
+
+        async Task<IReadOnlyList<TimelineDto>> Load(CancellationToken ct) =>
+            (await _timelines.ListByProjectAsync(project.Id, ct)).Select(ToTimelineDto).ToList();
+
+        if (!_documentCache.DocumentsEnabled)
+        {
+            return await Load(cancellationToken);
+        }
+
+        var identity = await _timelines.GetCurrentRevisionIdentityAsync(project.Id, cancellationToken);
+        return identity is null
+            ? []
+            : await _documentCache.GetTimelineListAsync(
+                project.Id,
+                identity.RevisionNumber,
+                Load,
+                cancellationToken);
+    }
 
     public Task<TimelineDto> CreateAsync(CreateTimelineRequest request, CancellationToken cancellationToken = default) =>
         throw new NotImplementedException();
@@ -237,6 +289,12 @@ internal sealed class TimelineService(
                 requested),
             cancellationToken);
         await _timelines.SaveChangesAsync(cancellationToken);
+        var result = ToRenderJobDto(renderJob, revision.RevisionNumber);
+        await _documentCache.WriteRenderJobAsync(
+            renderJob.Id,
+            renderJob.Status.ToString().ToLowerInvariant(),
+            renderJob.UpdatedAt,
+            result);
         await _realtime.RenderJobUpdatedAsync(renderJob, cancellationToken);
 
         _logger.LogInformation(
@@ -247,7 +305,7 @@ internal sealed class TimelineService(
             revision.RevisionNumber,
             renderJob.Id);
 
-        return ToRenderJobDto(renderJob, revision.RevisionNumber);
+        return result;
     }
 
     public async Task<RenderJobDto> GetRenderJobAsync(
@@ -255,15 +313,33 @@ internal sealed class TimelineService(
         CallerContext caller,
         CancellationToken cancellationToken = default)
     {
-        var renderJob = await _timelines.GetRenderJobByIdAsync(renderJobId, cancellationToken)
+        if (!_documentCache.RenderJobsEnabled)
+        {
+            var renderJob = await _timelines.GetRenderJobByIdAsync(renderJobId, cancellationToken)
+                ?? throw DomainException.NotFound("Render job not found.");
+            var timeline = await _timelines.GetByIdAsync(renderJob.TimelineId, cancellationToken)
+                ?? throw DomainException.NotFound("Video timeline not found.");
+            await _projects.RequireReadAccessAsync(timeline.ProjectId, caller, cancellationToken);
+            var revision = renderJob.RevisionId is null
+                ? null
+                : await _timelines.GetRevisionByIdAsync(renderJob.RevisionId.Value, cancellationToken);
+            return ToRenderJobDto(renderJob, revision?.RevisionNumber);
+        }
+
+        var state = await _timelines.GetRenderJobAccessStateAsync(renderJobId, cancellationToken)
             ?? throw DomainException.NotFound("Render job not found.");
-        var timeline = await _timelines.GetByIdAsync(renderJob.TimelineId, cancellationToken)
-            ?? throw DomainException.NotFound("Video timeline not found.");
-        await _projects.RequireReadAccessAsync(timeline.ProjectId, caller, cancellationToken);
-        var revision = renderJob.RevisionId is null
-            ? null
-            : await _timelines.GetRevisionByIdAsync(renderJob.RevisionId.Value, cancellationToken);
-        return ToRenderJobDto(renderJob, revision?.RevisionNumber);
+        await _projects.RequireReadAccessAsync(state.ProjectId, caller, cancellationToken);
+        return await _documentCache.GetRenderJobAsync(
+            renderJobId,
+            state.Status.ToString().ToLowerInvariant(),
+            state.UpdatedAt,
+            async ct =>
+            {
+                var renderJob = await _timelines.GetRenderJobByIdAsync(renderJobId, ct)
+                    ?? throw DomainException.NotFound("Render job not found.");
+                return ToRenderJobDto(renderJob, state.RevisionNumber);
+            },
+            cancellationToken);
     }
 
     public async Task<RenderJobOutputDownload> GetRenderJobOutputAsync(
@@ -353,6 +429,9 @@ internal sealed class TimelineService(
             revision.CreatedAt,
             revision.CreatedByUserId);
     }
+
+    private static TimelineDto ToTimelineDto(Timeline timeline) =>
+        new(timeline.Id, timeline.ProjectId, timeline.Name, timeline.CreatedAt, timeline.UpdatedAt);
 
     private static RenderJobDto ToRenderJobDto(RenderJob renderJob, int? revisionNumber)
     {

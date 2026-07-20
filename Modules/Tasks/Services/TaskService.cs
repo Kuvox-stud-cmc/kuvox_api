@@ -1,10 +1,12 @@
 using Kuvox.Api.Modules.Auth.Contracts;
 using Kuvox.Api.Modules.Projects.Contracts;
 using Kuvox.Api.Modules.Shared.Infrastructure;
+using Kuvox.Api.Modules.Shared.Infrastructure.Caching;
 using Kuvox.Api.Modules.Tasks.Contracts;
 using Kuvox.Api.Modules.Tasks.Models;
 using Kuvox.Api.Modules.Tasks.Repositories;
 using MediatR;
+using Microsoft.Extensions.Options;
 using System.Text.RegularExpressions;
 
 namespace Kuvox.Api.Modules.Tasks.Services;
@@ -13,9 +15,15 @@ internal sealed class TaskService(
     ITaskRepository tasks,
     IAuthApi auth,
     IProjectsApi projects,
-    IMediator mediator)
+    IMediator mediator,
+    BusinessCache cache,
+    CacheGenerationManager generations,
+    CacheKeyFactory cacheKeys,
+    IOptions<CachingOptions> cachingOptions,
+    CachePrewarmQueue prewarmQueue)
     : ITaskService
 {
+    private readonly TaskCacheOptions _cacheOptions = cachingOptions.Value.Tasks;
     private static readonly Regex MentionRegex = new(
         @"(?<![A-Za-z0-9_])@([A-Za-z0-9._%+\-@]+)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -26,9 +34,20 @@ internal sealed class TaskService(
         TaskIssueFilters filters,
         CancellationToken cancellationToken = default)
     {
-        RequireStudioRead(studioId, caller);
-        var issues = await tasks.ListByStudioAsync(studioId, filters, cancellationToken);
-        return await ToIssueDtosAsync(issues, cancellationToken);
+        await RequirePersistedStudioReadAsync(studioId, caller, cancellationToken);
+        var generation = await GetTaskGenerationAsync(studioId, cancellationToken);
+        async Task<IReadOnlyList<TaskIssueDto>> Load(CancellationToken ct)
+        {
+            var issues = await tasks.ListByStudioAsync(studioId, filters, ct);
+            return await ToIssueDtosAsync(issues, ct);
+        }
+
+        if (generation is null) return await Load(cancellationToken);
+        var key = BusinessCacheKey.Create(
+            cacheKeys, "task-list", "studio", studioId, "viewer", caller.UserId,
+            "filter", TaskFilterHash(filters), "gen", generation);
+        return await cache.GetOrCreateAsync(
+            "tasks", "list", _cacheOptions, key, TimeSpan.FromSeconds(_cacheOptions.TtlSeconds), Load, cancellationToken);
     }
 
     public async Task<IReadOnlyList<TaskIssueDto>> ListAssignedToMeAsync(
@@ -37,22 +56,60 @@ internal sealed class TaskService(
         Guid? studioId,
         CancellationToken cancellationToken = default)
     {
-        var studioIds = caller.Studios.Select(studio => studio.StudioId).Distinct().ToList();
+        var studioIds = caller.Studios.Select(studio => studio.StudioId).Distinct().Order().ToList();
         if (studioId is { } sid)
         {
-            RequireStudioRead(sid, caller);
+            await RequirePersistedStudioReadAsync(sid, caller, cancellationToken);
             studioIds = studioIds.Where(id => id == sid).ToList();
         }
 
-        var issues = await tasks.ListAssignedToUserAsync(caller.UserId, studioIds, filters, cancellationToken);
-        return await ToIssueDtosAsync(issues, cancellationToken);
+        foreach (var id in studioIds)
+        {
+            await RequirePersistedStudioReadAsync(id, caller, cancellationToken);
+        }
+
+        var generationParts = new List<string>();
+        foreach (var id in studioIds)
+        {
+            var generation = await GetTaskGenerationAsync(id, cancellationToken);
+            if (generation is null)
+            {
+                var uncached = await tasks.ListAssignedToUserAsync(caller.UserId, studioIds, filters, cancellationToken);
+                return await ToIssueDtosAsync(uncached, cancellationToken);
+            }
+            generationParts.Add($"{id:N}-{generation}");
+        }
+
+        var scopeIdentity = caller.Studios
+            .Where(item => studioIds.Contains(item.StudioId))
+            .OrderBy(item => item.StudioId)
+            .Select(item => $"{item.StudioId:N}-{BusinessCacheKey.Canonical(item.Role)}");
+        var key = BusinessCacheKey.Create(
+            cacheKeys, "task-assigned", "viewer", caller.UserId,
+            "scope", BusinessCacheKey.Hash(string.Join(',', scopeIdentity)),
+            "filter", TaskFilterHash(filters),
+            "gen", BusinessCacheKey.Hash(string.Join(',', generationParts)));
+        return await cache.GetOrCreateAsync(
+            "tasks", "assigned", _cacheOptions, key, TimeSpan.FromSeconds(_cacheOptions.TtlSeconds),
+            async ct =>
+            {
+                var issues = await tasks.ListAssignedToUserAsync(caller.UserId, studioIds, filters, ct);
+                return await ToIssueDtosAsync(issues, ct);
+            }, cancellationToken);
     }
 
     public async Task<TaskIssueDetailDto> GetAsync(Guid id, CallerContext caller, CancellationToken cancellationToken = default)
     {
         var issue = await LoadIssueAsync(id, cancellationToken);
-        RequireStudioRead(issue.StudioId, caller);
-        return await ToIssueDetailDtoAsync(issue, cancellationToken);
+        await RequirePersistedStudioReadAsync(issue.StudioId, caller, cancellationToken);
+        var generation = await GetTaskGenerationAsync(issue.StudioId, cancellationToken);
+        if (generation is null) return await ToIssueDetailDtoAsync(issue, cancellationToken);
+        var key = BusinessCacheKey.Create(
+            cacheKeys, "task-detail", "task", id, "studio", issue.StudioId,
+            "viewer", caller.UserId, "gen", generation);
+        return await cache.GetOrCreateAsync(
+            "tasks", "detail", _cacheOptions, key, TimeSpan.FromSeconds(_cacheOptions.TtlSeconds),
+            _ => ToIssueDetailDtoAsync(issue, cancellationToken), cancellationToken);
     }
 
     public async Task<TaskIssueDto> CreateAsync(
@@ -106,6 +163,7 @@ internal sealed class TaskService(
         }
 
         await tasks.SaveChangesAsync(cancellationToken);
+        await InvalidateTasksAsync(issue.StudioId);
         await NotifyAssignedAsync(issue, people.Assignees.Select(member => member.UserId), cancellationToken);
         return await ToIssueDtoAsync(issue, cancellationToken);
     }
@@ -213,6 +271,7 @@ internal sealed class TaskService(
         }
 
         await tasks.SaveChangesAsync(cancellationToken);
+        await InvalidateTasksAsync(issue.StudioId);
         await NotifyAssignedAsync(issue, addedAssigneeIds, cancellationToken);
         return await ToIssueDtoAsync(issue, cancellationToken);
     }
@@ -241,6 +300,7 @@ internal sealed class TaskService(
         }
 
         await tasks.SaveChangesAsync(cancellationToken);
+        await InvalidateTasksAsync(issue.StudioId);
 
         if (issue.Kind == TaskIssueKind.Review
             && previousStatus != issue.Status
@@ -263,6 +323,7 @@ internal sealed class TaskService(
 
         await DeleteIssueSubtreeAsync(issue, cancellationToken);
         await tasks.SaveChangesAsync(cancellationToken);
+        await InvalidateTasksAsync(issue.StudioId);
     }
 
     public async Task<IReadOnlyList<TaskMilestoneDto>> ListMilestonesAsync(
@@ -270,9 +331,14 @@ internal sealed class TaskService(
         CallerContext caller,
         CancellationToken cancellationToken = default)
     {
-        RequireStudioRead(studioId, caller);
-        var milestones = await tasks.ListMilestonesAsync(studioId, cancellationToken);
-        return milestones.Select(ToMilestoneDto).ToList();
+        await RequirePersistedStudioReadAsync(studioId, caller, cancellationToken);
+        var generation = await GetTaskReferenceGenerationAsync(studioId, cancellationToken);
+        async Task<IReadOnlyList<TaskMilestoneDto>> Load(CancellationToken ct) =>
+            (await tasks.ListMilestonesAsync(studioId, ct)).Select(ToMilestoneDto).ToList();
+        if (generation is null) return await Load(cancellationToken);
+        var key = BusinessCacheKey.Create(cacheKeys, "task-milestones-v2", "studio", studioId, "gen", generation);
+        return await cache.GetOrCreateAsync(
+            "tasks", "milestones", _cacheOptions, key, TimeSpan.FromSeconds(_cacheOptions.ReferencesTtlSeconds), Load, cancellationToken);
     }
 
     public async Task<TaskMilestoneDto> CreateMilestoneAsync(
@@ -301,6 +367,8 @@ internal sealed class TaskService(
         };
         await tasks.AddMilestoneAsync(milestone, cancellationToken);
         await tasks.SaveChangesAsync(cancellationToken);
+        await InvalidateTasksAsync(studioId);
+        await InvalidateTaskReferencesAsync(studioId);
         return ToMilestoneDto(milestone);
     }
 
@@ -319,6 +387,8 @@ internal sealed class TaskService(
 
         tasks.RemoveMilestone(milestone);
         await tasks.SaveChangesAsync(cancellationToken);
+        await InvalidateTasksAsync(milestone.StudioId);
+        await InvalidateTaskReferencesAsync(milestone.StudioId);
     }
 
     public async Task<TaskMilestoneDto> UpdateMilestoneAsync(
@@ -345,6 +415,8 @@ internal sealed class TaskService(
         milestone.Status = request.Status;
         milestone.UpdatedAt = DateTimeOffset.UtcNow;
         await tasks.SaveChangesAsync(cancellationToken);
+        await InvalidateTasksAsync(milestone.StudioId);
+        await InvalidateTaskReferencesAsync(milestone.StudioId);
         return ToMilestoneDto(milestone);
     }
 
@@ -353,9 +425,14 @@ internal sealed class TaskService(
         CallerContext caller,
         CancellationToken cancellationToken = default)
     {
-        RequireStudioRead(studioId, caller);
-        var labels = await tasks.ListLabelsAsync(studioId, cancellationToken);
-        return labels.Select(ToLabelDto).ToList();
+        await RequirePersistedStudioReadAsync(studioId, caller, cancellationToken);
+        var generation = await GetTaskReferenceGenerationAsync(studioId, cancellationToken);
+        async Task<IReadOnlyList<TaskLabelDto>> Load(CancellationToken ct) =>
+            (await tasks.ListLabelsAsync(studioId, ct)).Select(ToLabelDto).ToList();
+        if (generation is null) return await Load(cancellationToken);
+        var key = BusinessCacheKey.Create(cacheKeys, "task-labels-v2", "studio", studioId, "gen", generation);
+        return await cache.GetOrCreateAsync(
+            "tasks", "labels", _cacheOptions, key, TimeSpan.FromSeconds(_cacheOptions.ReferencesTtlSeconds), Load, cancellationToken);
     }
 
     public async Task<TaskLabelDto> CreateLabelAsync(
@@ -381,6 +458,8 @@ internal sealed class TaskService(
         };
         await tasks.AddLabelAsync(label, cancellationToken);
         await tasks.SaveChangesAsync(cancellationToken);
+        await InvalidateTasksAsync(studioId);
+        await InvalidateTaskReferencesAsync(studioId);
         return ToLabelDto(label);
     }
 
@@ -403,6 +482,8 @@ internal sealed class TaskService(
 
         tasks.RemoveLabel(label);
         await tasks.SaveChangesAsync(cancellationToken);
+        await InvalidateTasksAsync(label.StudioId);
+        await InvalidateTaskReferencesAsync(label.StudioId);
     }
 
     public async Task<TaskCommentDto> CreateCommentAsync(
@@ -425,6 +506,7 @@ internal sealed class TaskService(
         issue.UpdatedAt = DateTimeOffset.UtcNow;
         await AddActivityAsync(issue.Id, issue.StudioId, caller.UserId, "comment_created", "Added a comment.", cancellationToken);
         await tasks.SaveChangesAsync(cancellationToken);
+        await InvalidateTasksAsync(issue.StudioId);
         await NotifyCommentMentionsAsync(issue, caller.UserId, comment.Body, previousBody: null, cancellationToken);
         return await ToCommentDtoAsync(comment, cancellationToken);
     }
@@ -456,6 +538,7 @@ internal sealed class TaskService(
 
         await AddActivityAsync(comment.TaskIssueId, comment.StudioId, caller.UserId, "comment_edited", "Edited a comment.", cancellationToken);
         await tasks.SaveChangesAsync(cancellationToken);
+        await InvalidateTasksAsync(comment.StudioId);
         await NotifyCommentMentionsAsync(issue, caller.UserId, comment.Body, previousBody, cancellationToken);
         return await ToCommentDtoAsync(comment, cancellationToken);
     }
@@ -480,6 +563,7 @@ internal sealed class TaskService(
         tasks.RemoveComment(comment);
         await AddActivityAsync(taskIssueId, studioId, caller.UserId, "comment_deleted", "Deleted a comment.", cancellationToken);
         await tasks.SaveChangesAsync(cancellationToken);
+        await InvalidateTasksAsync(studioId);
     }
 
     public async Task<TaskLabelDto> UpdateLabelAsync(
@@ -503,6 +587,8 @@ internal sealed class TaskService(
         label.Color = NormalizeColor(request.Color);
         label.UpdatedAt = DateTimeOffset.UtcNow;
         await tasks.SaveChangesAsync(cancellationToken);
+        await InvalidateTasksAsync(label.StudioId);
+        await InvalidateTaskReferencesAsync(label.StudioId);
         return ToLabelDto(label);
     }
 
@@ -517,6 +603,62 @@ internal sealed class TaskService(
             throw DomainException.Forbidden("You are not a member of this studio.");
         }
     }
+
+    private async Task RequirePersistedStudioReadAsync(
+        Guid studioId,
+        CallerContext caller,
+        CancellationToken cancellationToken)
+    {
+        RequireStudioRead(studioId, caller);
+        if (await auth.GetStudioMemberAsync(studioId, caller.UserId, cancellationToken) is null)
+        {
+            throw DomainException.Forbidden("You are not a member of this studio.");
+        }
+    }
+
+    private Task<string?> GetTaskGenerationAsync(Guid studioId, CancellationToken cancellationToken) =>
+        cache.IsEnabled(_cacheOptions)
+            ? generations.GetAsync("tasks", $"studio-{studioId:N}", cancellationToken)
+            : Task.FromResult<string?>(null);
+
+    private Task<string?> GetTaskReferenceGenerationAsync(Guid studioId, CancellationToken cancellationToken) =>
+        cache.IsEnabled(_cacheOptions)
+            ? generations.GetAsync("task-references", $"studio-{studioId:N}", cancellationToken)
+            : Task.FromResult<string?>(null);
+
+    private async Task InvalidateTasksAsync(Guid studioId)
+    {
+        if (cache.IsEnabled(_cacheOptions))
+        {
+            _ = await generations.BumpAsync("tasks", $"studio-{studioId:N}");
+        }
+    }
+
+    private async Task InvalidateTaskReferencesAsync(Guid studioId)
+    {
+        if (cache.IsEnabled(_cacheOptions))
+        {
+            if (await generations.BumpAsync("task-references", $"studio-{studioId:N}"))
+            {
+                var generation = await generations.GetAsync(
+                    "task-references", $"studio-{studioId:N}");
+                if (generation is not null)
+                {
+                    prewarmQueue.TryQueue(new CachePrewarmRequest(
+                        CachePrewarmKind.TaskReferences, studioId, generation));
+                }
+            }
+        }
+    }
+
+    private static string TaskFilterHash(TaskIssueFilters filters) => BusinessCacheKey.Hash(
+        filters.Kind,
+        filters.Status,
+        filters.AssigneeId,
+        filters.MilestoneId,
+        filters.LabelId,
+        filters.ProjectId,
+        filters.DueBefore?.ToUniversalTime());
 
     private static void RequireStudioWrite(Guid studioId, CallerContext caller)
     {

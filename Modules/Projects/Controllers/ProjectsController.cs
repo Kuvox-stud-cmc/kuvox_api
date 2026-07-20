@@ -2,6 +2,8 @@ using Kuvox.Api.Modules.Projects.Dtos;
 using Kuvox.Api.Modules.Projects.Services;
 using Kuvox.Api.Modules.Shared.Dtos;
 using Kuvox.Api.Modules.Shared.Infrastructure;
+using Kuvox.Api.Modules.Shared.Infrastructure.Caching;
+using Kuvox.Api.Modules.Shared.Infrastructure.Http;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -17,7 +19,7 @@ namespace Kuvox.Api.Modules.Projects.Controllers;
 [ApiController]
 [Route("api/projects")]
 [Produces("application/json")]
-public sealed class ProjectsController(IProjectService projects) : ControllerBase
+public sealed class ProjectsController(IProjectService projects, CachingOptions caching) : ControllerBase
 {
     /// <summary>List the current workspace's projects (Personal, or a team via <c>studioId</c>).</summary>
     [HttpGet]
@@ -53,8 +55,31 @@ public sealed class ProjectsController(IProjectService projects) : ControllerBas
         projects.AttachMediaAsync(id, Caller(), request, ct);
 
     [HttpGet("{id:guid}/image-composition")]
-    public Task<ImageCompositionDto> GetImageComposition(Guid id, CancellationToken ct) =>
-        projects.GetImageCompositionAsync(id, Caller(), ct);
+    [ProducesResponseType(typeof(ImageCompositionDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status304NotModified)]
+    public async Task<IActionResult> GetImageComposition(Guid id, CancellationToken ct)
+    {
+        var document = await projects.GetImageCompositionAsync(id, Caller(), ct);
+        if (!caching.HttpValidatorsEnabled)
+        {
+            return Ok(document);
+        }
+
+        var etag = RevisionHttpValidators.ImageCompositionETag(document);
+        Response.Headers.ETag = etag;
+        Response.Headers.CacheControl = "private, no-cache";
+        return RevisionHttpValidators.IfNoneMatchMatches(Request.Headers.IfNoneMatch, etag)
+            ? StatusCode(StatusCodes.Status304NotModified)
+            : Ok(document);
+    }
+
+    [HttpGet("{id:guid}/editor-bootstrap")]
+    public Task<ProjectEditorBootstrapDto> GetEditorBootstrap(
+        Guid id,
+        [FromQuery] int mediaPage = 1,
+        [FromQuery] int mediaPageSize = 100,
+        CancellationToken ct = default) =>
+        projects.GetEditorBootstrapAsync(id, Caller(), mediaPage, mediaPageSize, ct);
 
     [HttpPut("{id:guid}/image-composition")]
     public Task<ImageCompositionDto> SaveImageComposition(Guid id, SaveImageCompositionRequest request, CancellationToken ct) =>

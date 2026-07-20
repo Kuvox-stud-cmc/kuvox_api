@@ -45,6 +45,7 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
             ConfigureOptimizedStorage(entity);
             entity.Property(m => m.Codec).HasMaxLength(64);
             entity.Property(m => m.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+            entity.Property(m => m.SearchRevision).HasDefaultValue(0L).IsRequired();
             entity.Property(m => m.ErrorMessage).HasMaxLength(1024);
             entity.Property(m => m.ArchiveStorageKey).HasMaxLength(1024);
             entity.Property(m => m.ArchiveReason).HasMaxLength(1024);
@@ -66,6 +67,7 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
             ConfigureOptimizedStorage(entity);
             entity.Property(a => a.Codec).HasMaxLength(64);
             entity.Property(a => a.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+            entity.Property(a => a.SearchRevision).HasDefaultValue(0L).IsRequired();
             entity.Property(a => a.ErrorMessage).HasMaxLength(1024);
             entity.Property(a => a.ArchiveStorageKey).HasMaxLength(1024);
             entity.Property(a => a.ArchiveReason).HasMaxLength(1024);
@@ -84,6 +86,7 @@ public sealed class MediaDbContext(DbContextOptions<MediaDbContext> options) : D
             ConfigureOptimizedStorage(entity);
             entity.Property(p => p.Codec).HasMaxLength(64);
             entity.Property(p => p.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+            entity.Property(p => p.SearchRevision).HasDefaultValue(0L).IsRequired();
             entity.Property(p => p.ErrorMessage).HasMaxLength(1024);
             entity.Property(p => p.ArchiveStorageKey).HasMaxLength(1024);
             entity.Property(p => p.ArchiveReason).HasMaxLength(1024);

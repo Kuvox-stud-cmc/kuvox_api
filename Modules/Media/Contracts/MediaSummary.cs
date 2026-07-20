@@ -27,7 +27,8 @@ public sealed record MediaSummary(
     int? Height = null,
     string? Codec = null,
     double? FrameRate = null,
-    DateTimeOffset? CreatedAt = null
+    DateTimeOffset? CreatedAt = null,
+    long SearchRevision = 0
 );
 
 public enum MediaResolutionAvailability

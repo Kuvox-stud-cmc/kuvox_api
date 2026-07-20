@@ -15,11 +15,15 @@ internal interface ITimelineRepository
 
     Task<TimelineRevision?> GetLatestRevisionAsync(Guid timelineId, CancellationToken cancellationToken = default);
 
+    Task<TimelineRevisionIdentity?> GetCurrentRevisionIdentityAsync(Guid projectId, CancellationToken cancellationToken = default);
+
     Task<TimelineRevision?> GetRevisionByNumberAsync(Guid timelineId, int revisionNumber, CancellationToken cancellationToken = default);
 
     Task<TimelineRevision?> GetRevisionByIdAsync(Guid revisionId, CancellationToken cancellationToken = default);
 
     Task<RenderJob?> GetRenderJobByIdAsync(Guid renderJobId, CancellationToken cancellationToken = default);
+
+    Task<RenderJobAccessState?> GetRenderJobAccessStateAsync(Guid renderJobId, CancellationToken cancellationToken = default);
 
     Task AddAsync(Timeline timeline, CancellationToken cancellationToken = default);
 
@@ -31,3 +35,20 @@ internal interface ITimelineRepository
 
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
+
+internal sealed record TimelineRevisionIdentity(
+    Guid ProjectId,
+    Guid TimelineId,
+    string TimelineName,
+    DateTimeOffset TimelineCreatedAt,
+    DateTimeOffset TimelineUpdatedAt,
+    Guid RevisionId,
+    int RevisionNumber);
+
+internal sealed record RenderJobAccessState(
+    Guid ProjectId,
+    Guid TimelineId,
+    Guid? RevisionId,
+    int? RevisionNumber,
+    Kuvox.Api.Modules.Timelines.Enums.RenderStatus Status,
+    DateTimeOffset UpdatedAt);

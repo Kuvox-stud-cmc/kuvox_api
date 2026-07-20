@@ -90,6 +90,25 @@ public class SeaweedFileStorageService(
       response.ETag);
   }
 
+  public async Task<bool> ExistsAsync(
+    string bucketName,
+    string objectKey,
+    CancellationToken cancellationToken = default
+  )
+  {
+    try
+    {
+      await _s3.GetObjectMetadataAsync(bucketName, objectKey, cancellationToken);
+      return true;
+    }
+    catch (AmazonS3Exception ex) when (
+      ex.StatusCode == System.Net.HttpStatusCode.NotFound
+      || string.Equals(ex.ErrorCode, "NoSuchKey", StringComparison.OrdinalIgnoreCase))
+    {
+      return false;
+    }
+  }
+
   public async Task DeleteAsync(
     string bucketName,
     string objectKey,
@@ -115,7 +134,7 @@ public class SeaweedFileStorageService(
 
     var buckets = await _s3.ListBucketsAsync(cancellationToken);
 
-    var exists = buckets.Buckets.Any(b => b.BucketName == bucketName);
+    var exists = buckets.Buckets?.Any(b => b.BucketName == bucketName) == true;
 
     if (!exists)
     {

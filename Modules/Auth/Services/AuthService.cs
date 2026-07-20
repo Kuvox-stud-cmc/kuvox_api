@@ -5,6 +5,7 @@ using Kuvox.Api.Modules.Auth.Enums;
 using Kuvox.Api.Modules.Auth.Models;
 using Kuvox.Api.Modules.Auth.Repositories;
 using Kuvox.Api.Modules.Shared.Infrastructure;
+using Kuvox.Api.Modules.Shared.Infrastructure.Caching;
 using Kuvox.Api.Modules.Shared.Infrastructure.Email;
 using MediatR;
 using Microsoft.AspNetCore.Identity;
@@ -26,7 +27,10 @@ internal sealed class AuthService(
     IPasswordHasher<User> passwordHasher,
     IMediator mediator,
     IEmailSender emailSender,
-    IOptions<FrontendOptions> frontendOptions) : IAuthService
+    IOptions<FrontendOptions> frontendOptions,
+    BusinessCache cache,
+    CacheKeyFactory cacheKeys,
+    IOptions<CachingOptions> cachingOptions) : IAuthService
 {
     private static readonly TimeSpan VerificationTokenLifetime = TimeSpan.FromHours(24);
     private static readonly TimeSpan ResetTokenLifetime = TimeSpan.FromHours(1);
@@ -42,6 +46,7 @@ internal sealed class AuthService(
     };
 
     private readonly string _frontendBaseUrl = frontendOptions.Value.BaseUrl.TrimEnd('/');
+    private readonly CacheFeatureOptions _cacheOptions = cachingOptions.Value.UserSettings;
 
     public async Task<UserDto> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
     {
@@ -171,14 +176,28 @@ internal sealed class AuthService(
 
     public async Task<UserDto?> GetCurrentUserAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        var user = await users.GetByIdAsync(userId, cancellationToken);
-        return user is null ? null : ToDto(user);
+        return await cache.GetOrCreateAsync<UserDto?>(
+            "user-settings", "profile", _cacheOptions, UserCacheKey("profile", userId),
+            TimeSpan.FromSeconds(_cacheOptions.TtlSeconds),
+            async ct =>
+            {
+                var user = await users.GetByIdAsync(userId, ct);
+                return user is null ? null : ToDto(user);
+            },
+            cancellationToken);
     }
 
     public async Task<UserSettingsDto?> GetSettingsAsync(Guid userId, CancellationToken cancellationToken = default)
     {
-        var user = await users.GetByIdAsync(userId, cancellationToken);
-        return user is null ? null : ToSettingsDto(user);
+        return await cache.GetOrCreateAsync<UserSettingsDto?>(
+            "user-settings", "settings", _cacheOptions, UserCacheKey("settings", userId),
+            TimeSpan.FromSeconds(_cacheOptions.TtlSeconds),
+            async ct =>
+            {
+                var user = await users.GetByIdAsync(userId, ct);
+                return user is null ? null : ToSettingsDto(user);
+            },
+            cancellationToken);
     }
 
     public async Task<UserDto> UpdateProfileAsync(
@@ -202,6 +221,7 @@ internal sealed class AuthService(
 
         user.DisplayName = displayName;
         await users.SaveChangesAsync(cancellationToken);
+        await InvalidateUserAsync(user.Id);
 
         return ToDto(user);
     }
@@ -222,6 +242,7 @@ internal sealed class AuthService(
         user.DefaultEditorMode = defaultEditorMode;
 
         await users.SaveChangesAsync(cancellationToken);
+        await InvalidateUserAsync(user.Id);
 
         return ToPreferencesDto(user);
     }
@@ -240,6 +261,7 @@ internal sealed class AuthService(
         user.OnboardingCompletedAt = DateTimeOffset.UtcNow;
 
         await users.SaveChangesAsync(cancellationToken);
+        await InvalidateUserAsync(user.Id);
 
         return ToOnboardingProfileDto(user);
     }
@@ -265,6 +287,7 @@ internal sealed class AuthService(
 
         user.PasswordHash = passwordHasher.HashPassword(user, request.NewPassword);
         await users.SaveChangesAsync(cancellationToken);
+        await InvalidateUserAsync(user.Id);
 
         await users.RevokeAllRefreshTokensAsync(user.Id, cancellationToken);
     }
@@ -291,6 +314,7 @@ internal sealed class AuthService(
 
         stored.UsedAt = DateTimeOffset.UtcNow;
         await users.SaveChangesAsync(cancellationToken);
+        await InvalidateUserAsync(user.Id);
 
         if (wasUnverified)
         {
@@ -400,6 +424,7 @@ internal sealed class AuthService(
         stored.UsedAt = DateTimeOffset.UtcNow;
 
         await users.SaveChangesAsync(cancellationToken);
+        await InvalidateUserAsync(user.Id);
 
         if (wasUnverified)
         {
@@ -411,6 +436,15 @@ internal sealed class AuthService(
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────
+
+    private string UserCacheKey(string kind, Guid userId) =>
+        BusinessCacheKey.Create(cacheKeys, "user", kind, "user", userId);
+
+    private async Task InvalidateUserAsync(Guid userId)
+    {
+        await cache.InvalidateExactAsync("user-settings", UserCacheKey("profile", userId), _cacheOptions);
+        await cache.InvalidateExactAsync("user-settings", UserCacheKey("settings", userId), _cacheOptions);
+    }
 
     private async Task SendVerificationEmailAsync(User user, CancellationToken cancellationToken)
     {

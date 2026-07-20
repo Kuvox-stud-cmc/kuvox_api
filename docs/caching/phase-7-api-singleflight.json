@@ -1,0 +1,44 @@
+{
+  "captured_at": "2026-07-19T09:12:35.855367+00:00",
+  "cold": {
+    "metric_deltas": {
+      "kuvox_business_cache_operations_total{domain=\"storage-usage\",operation=\"authoritative\",outcome=\"success\"}": 1.0,
+      "kuvox_business_cache_operations_total{domain=\"storage-usage\",operation=\"studio-aggregate\",outcome=\"hit\"}": 15.0,
+      "kuvox_business_cache_operations_total{domain=\"storage-usage\",operation=\"studio-aggregate\",outcome=\"miss\"}": 16.0,
+      "kuvox_business_cache_operations_total{domain=\"storage-usage\",operation=\"write\",outcome=\"success\"}": 1.0,
+      "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 67.0,
+      "kuvox_postgres_commands_total{module=\"media\",command_type=\"select\"}": 2.0,
+      "kuvox_postgres_commands_total{module=\"projects\",command_type=\"select\"}": 2.0,
+      "kuvox_redis_commands_total{service=\"api\",command=\"eval_release\",outcome=\"success\"}": 1.0,
+      "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 48.0,
+      "kuvox_redis_commands_total{service=\"api\",command=\"set\",outcome=\"success\"}": 1.0,
+      "kuvox_redis_commands_total{service=\"api\",command=\"set_nx_px\",outcome=\"success\"}": 16.0,
+      "kuvox_single_flight_events_total{service=\"api\",component=\"storage-usage\",outcome=\"join\"}": 15.0,
+      "kuvox_single_flight_events_total{service=\"api\",component=\"storage-usage\",outcome=\"joined_cache_hit\"}": 15.0,
+      "kuvox_single_flight_events_total{service=\"api\",component=\"storage-usage\",outcome=\"leader\"}": 1.0
+    },
+    "response_hashes": [
+      "345445e27645f43f63183d5ad0036c286b3e3041335f4a3aa7b1bc472ae120c3"
+    ],
+    "statuses": [
+      200
+    ]
+  },
+  "concurrency": 16,
+  "fixture": {
+    "schema_version": 1
+  },
+  "warm": {
+    "metric_deltas": {
+      "kuvox_business_cache_operations_total{domain=\"storage-usage\",operation=\"studio-aggregate\",outcome=\"hit\"}": 16.0,
+      "kuvox_postgres_commands_total{module=\"auth\",command_type=\"select\"}": 66.0,
+      "kuvox_redis_commands_total{service=\"api\",command=\"get\",outcome=\"success\"}": 32.0
+    },
+    "response_hashes": [
+      "345445e27645f43f63183d5ad0036c286b3e3041335f4a3aa7b1bc472ae120c3"
+    ],
+    "statuses": [
+      200
+    ]
+  }
+}

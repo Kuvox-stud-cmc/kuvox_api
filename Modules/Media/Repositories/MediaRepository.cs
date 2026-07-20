@@ -80,15 +80,27 @@ internal sealed class MediaRepository(MediaDbContext db) : IMediaRepository
     public async Task<IReadOnlyList<Models.Media>> ListDeletedBeforeAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default) =>
         await db.Media.Where(m => m.DeletedAt != null && m.DeletedAt < cutoff).ToListAsync(cancellationToken);
 
-    public async Task<IReadOnlyList<Models.Media>> ListStalePipelineAsync(
+    public async Task<IReadOnlyList<Models.Media>> ListPipelineRecoveryCandidatesAsync(
         DateTimeOffset cutoff,
         int batchSize,
+        bool ingestionEnabled,
         CancellationToken cancellationToken = default) =>
         await db.Media
             .Where(m =>
                 m.DeletedAt == null
                 && m.UpdatedAt <= cutoff
-                && (m.Status == MediaStatus.Uploaded || m.Status == MediaStatus.Processing))
+                && (
+                    m.Status == MediaStatus.Uploaded
+                    || m.Status == MediaStatus.Processing
+                    || (!ingestionEnabled
+                        && m.Status == MediaStatus.Failed
+                        && m.CanonicalBucketName != null
+                        && m.CanonicalStorageKey != null)
+                    || (ingestionEnabled
+                        && m.Status == MediaStatus.Ready
+                        && m.SearchRevision == 0
+                        && m.CanonicalBucketName != null
+                        && m.CanonicalStorageKey != null)))
             .OrderBy(m => m.UpdatedAt)
             .Take(batchSize)
             .ToListAsync(cancellationToken);

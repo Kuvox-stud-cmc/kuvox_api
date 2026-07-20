@@ -1,6 +1,8 @@
 using Kuvox.Api.Modules.Timelines.Dtos;
 using Kuvox.Api.Modules.Timelines.Services;
 using Kuvox.Api.Modules.Shared.Infrastructure;
+using Kuvox.Api.Modules.Shared.Infrastructure.Caching;
+using Kuvox.Api.Modules.Shared.Infrastructure.Http;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -13,11 +15,26 @@ namespace Kuvox.Api.Modules.Timelines.Controllers;
 [ApiController]
 [Route("api/timelines")]
 [Produces("application/json")]
-public sealed class TimelinesController(ITimelineService timelines) : ControllerBase
+public sealed class TimelinesController(ITimelineService timelines, CachingOptions caching) : ControllerBase
 {
     [HttpGet("projects/{projectId:guid}/current")]
-    public Task<TimelineDocumentDto> GetCurrentDocument(Guid projectId, CancellationToken ct) =>
-        timelines.GetCurrentDocumentAsync(projectId, Caller(), ct);
+    [ProducesResponseType(typeof(TimelineDocumentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status304NotModified)]
+    public async Task<IActionResult> GetCurrentDocument(Guid projectId, CancellationToken ct)
+    {
+        var document = await timelines.GetCurrentDocumentAsync(projectId, Caller(), ct);
+        if (!caching.HttpValidatorsEnabled)
+        {
+            return Ok(document);
+        }
+
+        var etag = RevisionHttpValidators.TimelineETag(document);
+        Response.Headers.ETag = etag;
+        Response.Headers.CacheControl = "private, no-cache";
+        return RevisionHttpValidators.IfNoneMatchMatches(Request.Headers.IfNoneMatch, etag)
+            ? StatusCode(StatusCodes.Status304NotModified)
+            : Ok(document);
+    }
 
     [HttpPut("projects/{projectId:guid}/current")]
     public Task<TimelineDocumentDto> SaveCurrentDocument(Guid projectId, SaveTimelineDocumentRequest request, CancellationToken ct) =>
@@ -25,7 +42,7 @@ public sealed class TimelinesController(ITimelineService timelines) : Controller
 
     [HttpGet]
     public Task<IReadOnlyList<TimelineDto>> ListByProject([FromQuery] Guid projectId, CancellationToken ct) =>
-        timelines.ListByProjectAsync(projectId, ct);
+        timelines.ListByProjectAsync(projectId, Caller(), ct);
 
     [HttpPost]
     public Task<TimelineDto> Create(CreateTimelineRequest request, CancellationToken ct) =>

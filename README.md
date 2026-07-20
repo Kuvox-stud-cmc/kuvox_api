@@ -11,7 +11,7 @@ between the frontend clients and the Python AI service.
 - **ASP.NET** (.NET 10)
 - **Entity Framework Core** (PostgreSQL provider)
 - **PostgreSQL** for persistence
-- **Redis** for caching and ephemeral state
+- **Redis 7** as optional cache infrastructure (all cache features are disabled in Phase 0)
 - **RabbitMQ** for async job dispatch
 - **gRPC** for communication with the Python AI service
 - **JWT** for authentication
@@ -51,6 +51,14 @@ The API will be available at `https://localhost:5001` (or `http://localhost:5000
 
 - Scalar API reference: `/scalar` (Development environment only)
 - OpenAPI document: `/openapi/v1.json` (Development environment only)
+- Liveness: `/health` and `/health/live`
+- Readiness: `/health/ready` (PostgreSQL required, Redis optional)
+- Private Prometheus metrics: `/metrics` when `Metrics__Enabled=true`
+
+Phase 0 registers a lazy, application-lifetime Redis connection provider and raw-byte/JSON
+cache contracts. With `Caching__Enabled=false` (the default), no Redis connection is made
+and no user, Studio, project, media, task, notification, timeline, or other business value
+is cached.
 
 > The OpenAPI/Scalar endpoints are mapped only when `ASPNETCORE_ENVIRONMENT=Development`.
 
@@ -186,6 +194,17 @@ Compose file for full-stack development or a per-repo Compose file for isolated 
 | ----------------------------- | -------------------------------------- | ---------------------------------- |
 | `ConnectionStrings__Postgres` | PostgreSQL connection string           | see `appsettings.Development.json` |
 | `ConnectionStrings__Redis`    | Redis connection string                | `localhost:6379`                   |
+| `Caching__Enabled`            | Enable optional Redis cache infrastructure | `false`                         |
+| `Caching__HttpValidatorsEnabled` | Enable authorized revision ETags for current editor documents | `false`              |
+| `Caching__KeyPrefix`          | Versioned Redis key prefix             | `kuvox:v1`                         |
+| `Caching__MaxPayloadBytes`    | Maximum cacheable payload              | `1048576`                          |
+| `Caching__StampedeProtectionEnabled` | Enable advisory API single-flight foundation | `false`                  |
+| `Caching__StudioUsageSingleFlightEnabled` | Coalesce Studio usage aggregates | `false`                         |
+| `Caching__StudioSettingsPrewarmEnabled` | Enable targeted Studio settings prewarm | `false`                     |
+| `Caching__TaskReferencePrewarmEnabled` | Enable targeted label/milestone prewarm | `false`                      |
+| `Caching__EditorDocuments__Enabled` | Enable revision-addressed editor documents | `false`                    |
+| `Caching__RenderJobs__Enabled` | Enable revision/state-addressed render status | `false`                     |
+| `Metrics__Enabled`            | Expose the private Prometheus endpoint | `true`                             |
 | `RabbitMQ__Host`              | RabbitMQ hostname                      | `localhost`                        |
 | `Jwt__Secret`                 | JWT signing key                        | —                                  |
 | `Jwt__Issuer`                 | JWT issuer claim                       | `kuvox-api`                        |

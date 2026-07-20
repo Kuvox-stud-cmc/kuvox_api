@@ -4,21 +4,49 @@ using Kuvox.Api.Modules.Notifications.Models;
 using Kuvox.Api.Modules.Notifications.Repositories;
 using Kuvox.Api.Modules.Shared.Dtos;
 using Kuvox.Api.Modules.Shared.Infrastructure;
+using Kuvox.Api.Modules.Shared.Infrastructure.Caching;
+using Microsoft.Extensions.Options;
 
 namespace Kuvox.Api.Modules.Notifications.Services;
 
-internal sealed class NotificationsService(INotificationsRepository notifications) : INotificationsService
+internal sealed class NotificationsService(
+    INotificationsRepository notifications,
+    BusinessCache cache,
+    CacheKeyFactory cacheKeys,
+    NotificationCacheInvalidator invalidator,
+    IOptions<CachingOptions> cachingOptions) : INotificationsService
 {
+    private readonly CachingOptions _caching = cachingOptions.Value;
+
     public async Task<PagedResult<NotificationDto>> ListMineAsync(
         Guid userId, int page, int pageSize, CancellationToken cancellationToken = default)
     {
         (page, pageSize) = Normalize(page, pageSize);
-        var result = await notifications.ListForUserAsync(userId, page, pageSize, cancellationToken);
-        return new PagedResult<NotificationDto>(result.Items.Select(ToDto).ToList(), result.Page, result.PageSize, result.TotalCount);
+        var generation = await invalidator.GetPageGenerationAsync(userId, cancellationToken);
+        async Task<PagedResult<NotificationDto>> Load(CancellationToken ct)
+        {
+            var result = await notifications.ListForUserAsync(userId, page, pageSize, ct);
+            return new PagedResult<NotificationDto>(result.Items.Select(ToDto).ToList(), result.Page, result.PageSize, result.TotalCount);
+        }
+
+        if (generation is null)
+        {
+            return await Load(cancellationToken);
+        }
+
+        var key = BusinessCacheKey.Create(
+            cacheKeys, "notification-page", "user", userId, "page", page, "size", pageSize, "gen", generation);
+        return await cache.GetOrCreateAsync(
+            "notifications", "list", _caching.Notifications, key,
+            TimeSpan.FromSeconds(_caching.Notifications.TtlSeconds), Load, cancellationToken);
     }
 
-    public async Task<UnreadCountDto> CountUnreadAsync(Guid userId, CancellationToken cancellationToken = default) =>
-        new(await notifications.CountUnreadAsync(userId, cancellationToken));
+    public Task<UnreadCountDto> CountUnreadAsync(Guid userId, CancellationToken cancellationToken = default) =>
+        cache.GetOrCreateAsync(
+            "notification-count", "count", _caching.NotificationCount, invalidator.CountKey(userId),
+            TimeSpan.FromSeconds(_caching.NotificationCount.TtlSeconds),
+            async ct => new UnreadCountDto(await notifications.CountUnreadAsync(userId, ct)),
+            cancellationToken);
 
     public async Task<NotificationDto> MarkReadAsync(
         Guid userId, Guid notificationId, CancellationToken cancellationToken = default)
@@ -26,6 +54,7 @@ internal sealed class NotificationsService(INotificationsRepository notification
         var notification = await LoadAsync(userId, notificationId, cancellationToken);
         MarkRead(notification);
         await notifications.SaveChangesAsync(cancellationToken);
+        await invalidator.InvalidateAsync(userId);
         return ToDto(notification);
     }
 
@@ -33,6 +62,7 @@ internal sealed class NotificationsService(INotificationsRepository notification
     {
         await notifications.MarkAllReadAsync(userId, cancellationToken);
         await notifications.SaveChangesAsync(cancellationToken);
+        await invalidator.InvalidateAsync(userId);
     }
 
     public async Task<NotificationDto> ArchiveAsync(
@@ -41,6 +71,7 @@ internal sealed class NotificationsService(INotificationsRepository notification
         var notification = await LoadAsync(userId, notificationId, cancellationToken);
         notification.Status = NotificationStatus.Archived;
         await notifications.SaveChangesAsync(cancellationToken);
+        await invalidator.InvalidateAsync(userId);
         return ToDto(notification);
     }
 
@@ -49,6 +80,7 @@ internal sealed class NotificationsService(INotificationsRepository notification
         var notification = await LoadAsync(userId, notificationId, cancellationToken);
         notification.Status = NotificationStatus.Deleted;
         await notifications.SaveChangesAsync(cancellationToken);
+        await invalidator.InvalidateAsync(userId);
     }
 
     private async Task<Notification> LoadAsync(Guid userId, Guid notificationId, CancellationToken cancellationToken)

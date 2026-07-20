@@ -19,7 +19,10 @@ public interface IMediaService
 
     Task<MediaDto> UploadRawAsync(WorkspaceScope scope, CallerContext caller, UploadMediaRequest request, CancellationToken cancellationToken = default);
 
-    Task<MediaStorageUsageDto> GetStorageUsageAsync(WorkspaceScope scope, CancellationToken cancellationToken = default);
+    Task<MediaStorageUsageDto> GetStorageUsageAsync(
+        WorkspaceScope scope,
+        CallerContext caller,
+        CancellationToken cancellationToken = default);
 
     Task<MediaStorageUsageDto> GetPersonalStorageUsageAsync(CallerContext caller, CancellationToken cancellationToken = default);
 

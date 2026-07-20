@@ -26,6 +26,26 @@ internal sealed class TimelineRepository(TimelinesDbContext db) : ITimelineRepos
             .OrderByDescending(revision => revision.RevisionNumber)
             .FirstOrDefaultAsync(cancellationToken);
 
+    public Task<TimelineRevisionIdentity?> GetCurrentRevisionIdentityAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default) =>
+        (from timeline in db.Timelines
+         where timeline.ProjectId == projectId
+         from revision in db.TimelineRevisions
+             .Where(revision => revision.TimelineId == timeline.Id)
+             .OrderByDescending(revision => revision.RevisionNumber)
+             .Take(1)
+         orderby timeline.CreatedAt
+         select new TimelineRevisionIdentity(
+             projectId,
+             timeline.Id,
+             timeline.Name,
+             timeline.CreatedAt,
+             timeline.UpdatedAt,
+             revision.Id,
+             revision.RevisionNumber))
+        .FirstOrDefaultAsync(cancellationToken);
+
     public Task<TimelineRevision?> GetRevisionByNumberAsync(Guid timelineId, int revisionNumber, CancellationToken cancellationToken = default) =>
         db.TimelineRevisions.FirstOrDefaultAsync(
             revision => revision.TimelineId == timelineId && revision.RevisionNumber == revisionNumber,
@@ -36,6 +56,23 @@ internal sealed class TimelineRepository(TimelinesDbContext db) : ITimelineRepos
 
     public Task<RenderJob?> GetRenderJobByIdAsync(Guid renderJobId, CancellationToken cancellationToken = default) =>
         db.RenderJobs.FirstOrDefaultAsync(job => job.Id == renderJobId, cancellationToken);
+
+    public Task<RenderJobAccessState?> GetRenderJobAccessStateAsync(
+        Guid renderJobId,
+        CancellationToken cancellationToken = default) =>
+        (from job in db.RenderJobs
+         join timeline in db.Timelines on job.TimelineId equals timeline.Id
+         join revision in db.TimelineRevisions on job.RevisionId equals revision.Id into revisions
+         from revision in revisions.DefaultIfEmpty()
+         where job.Id == renderJobId
+         select new RenderJobAccessState(
+             timeline.ProjectId,
+             timeline.Id,
+             job.RevisionId,
+             revision == null ? null : revision.RevisionNumber,
+             job.Status,
+             job.UpdatedAt))
+        .FirstOrDefaultAsync(cancellationToken);
 
     public async Task AddAsync(Timeline timeline, CancellationToken cancellationToken = default) =>
         await db.Timelines.AddAsync(timeline, cancellationToken);
