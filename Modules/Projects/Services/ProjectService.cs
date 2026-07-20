@@ -14,7 +14,6 @@ using MediatR;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
 using MediaKind = Kuvox.Api.Modules.Media.Enums.MediaKind;
-using MediaOwnerKind = Kuvox.Api.Modules.Media.Enums.OwnerKind;
 
 namespace Kuvox.Api.Modules.Projects.Services;
 
@@ -208,27 +207,9 @@ internal sealed class ProjectService(
         var resolvedById = resolved.ToDictionary(item => item.MediaId);
         foreach (var mediaId in mediaIds)
         {
-            if (!resolvedById.TryGetValue(mediaId, out var resolution) || resolution.Availability == MediaResolutionAvailability.Missing)
-            {
-                throw DomainException.NotFound($"Media {mediaId} was not found.");
-            }
-
-            if (resolution.Availability == MediaResolutionAvailability.Deleted)
-            {
-                throw DomainException.BadRequest($"Media {mediaId} is in Trash and cannot be attached to this project.");
-            }
-
-            if (resolution.Availability == MediaResolutionAvailability.Inaccessible)
-            {
-                throw DomainException.Forbidden($"You do not have access to media {mediaId}.");
-            }
-
-            var summary = resolution.Media
-                ?? throw DomainException.BadRequest($"Media {mediaId} cannot be attached to this project.");
-            if (!IsSameWorkspace(project, summary))
-            {
-                throw DomainException.BadRequest($"Media {mediaId} belongs to a different workspace.");
-            }
+            var resolution = resolvedById.GetValueOrDefault(mediaId)
+                ?? new MediaResolution(mediaId, null, MediaResolutionAvailability.Missing, null);
+            ProjectMediaAttachmentPolicy.RequireAttachable(mediaId, resolution);
         }
 
         foreach (var resolution in resolved)
@@ -335,14 +316,19 @@ internal sealed class ProjectService(
             throw DomainException.Forbidden("You do not have access to this project.");
         }
 
-        var projectDto = await GetAuthorizedProjectAsync(project, caller, cancellationToken);
-        var projectMedia = await ListAuthorizedMediaAsync(project, caller, mediaPage, mediaPageSize, cancellationToken);
         if (project.Kind == ProjectKind.Video)
         {
             var snapshot = await timelines.GetAuthorizedProjectSnapshotAsync(ToDocumentAccess(project), cancellationToken);
+            if (snapshot is not null && await CanWriteAsync(project, caller, cancellationToken))
+            {
+                await ReconcileTimelineMediaAsync(project, caller, snapshot.DocumentJson, cancellationToken);
+            }
+
+            var videoProjectDto = await GetAuthorizedProjectAsync(project, caller, cancellationToken);
+            var videoProjectMedia = await ListAuthorizedMediaAsync(project, caller, mediaPage, mediaPageSize, cancellationToken);
             return new ProjectEditorBootstrapDto(
-                projectDto,
-                projectMedia,
+                videoProjectDto,
+                videoProjectMedia,
                 snapshot is null ? null : new EditorBootstrapTimelineDto(
                     snapshot.ProjectId,
                     snapshot.TimelineId,
@@ -357,6 +343,8 @@ internal sealed class ProjectService(
                 null);
         }
 
+        var projectDto = await GetAuthorizedProjectAsync(project, caller, cancellationToken);
+        var projectMedia = await ListAuthorizedMediaAsync(project, caller, mediaPage, mediaPageSize, cancellationToken);
         var composition = await GetAuthorizedImageCompositionAsync(project, cancellationToken);
         return new ProjectEditorBootstrapDto(
             projectDto,
@@ -871,10 +859,52 @@ internal sealed class ProjectService(
 
     private static OwnerKind OwnerKindOf(WorkspaceScope scope) => scope.IsStudio ? OwnerKind.Studio : OwnerKind.User;
 
-    private static bool IsSameWorkspace(Project project, MediaSummary summary) =>
-        project.OwnerId == summary.OwnerId
-        && ((project.OwnerKind == OwnerKind.User && summary.OwnerKind == MediaOwnerKind.User)
-            || (project.OwnerKind == OwnerKind.Studio && summary.OwnerKind == MediaOwnerKind.Studio));
+    private async Task ReconcileTimelineMediaAsync(
+        Project project,
+        CallerContext caller,
+        JsonElement document,
+        CancellationToken cancellationToken)
+    {
+        var referencedIds = ProjectMediaAttachmentPolicy.ExtractTimelineMediaIds(document);
+        if (referencedIds.Count == 0)
+        {
+            return;
+        }
+
+        var associatedIds = await projects.GetAssociatedMediaIdsAsync(project.Id, referencedIds, cancellationToken);
+        var missingIds = referencedIds.Where(mediaId => !associatedIds.Contains(mediaId)).ToArray();
+        if (missingIds.Length == 0)
+        {
+            return;
+        }
+
+        var resolved = await media.ResolveAsync(missingIds, caller, cancellationToken);
+        var attachedAny = false;
+        foreach (var resolution in resolved)
+        {
+            if (resolution.Availability is not (
+                    MediaResolutionAvailability.Available
+                    or MediaResolutionAvailability.Processing
+                    or MediaResolutionAvailability.Failed)
+                || resolution.Media is null
+                || resolution.Kind is not { } kind)
+            {
+                continue;
+            }
+
+            await projects.AddProjectMediaAsync(project.Id, resolution.MediaId, kind, cancellationToken);
+            attachedAny = true;
+        }
+
+        if (!attachedAny)
+        {
+            return;
+        }
+
+        project.UpdatedAt = DateTimeOffset.UtcNow;
+        await projects.SaveChangesAsync(cancellationToken);
+        await InvalidateProjectAsync(project);
+    }
 
     private static (int Page, int PageSize) Normalize(int page, int pageSize) =>
         (Math.Max(1, page), Math.Clamp(pageSize, 1, 100));

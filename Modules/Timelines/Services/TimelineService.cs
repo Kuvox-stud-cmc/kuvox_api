@@ -138,6 +138,12 @@ internal sealed class TimelineService(
             throw DomainException.Conflict("The video timeline changed on the server.");
         }
 
+        await ValidateIntroducedMediaAsync(
+            request.DocumentJson,
+            latestRevision?.DocumentJson,
+            caller,
+            cancellationToken);
+
         if (timeline is null)
         {
             timeline = new Timeline
@@ -496,6 +502,58 @@ internal sealed class TimelineService(
         }
 
         return sources;
+    }
+
+    private async Task ValidateIntroducedMediaAsync(
+        JsonElement nextDocument,
+        string? currentDocumentJson,
+        CallerContext caller,
+        CancellationToken cancellationToken)
+    {
+        var nextIds = ExtractReferencedMediaIds(nextDocument);
+        if (nextIds.Count == 0)
+        {
+            return;
+        }
+
+        IReadOnlyCollection<Guid> currentIds = [];
+        if (!string.IsNullOrWhiteSpace(currentDocumentJson))
+        {
+            using var currentDocument = JsonDocument.Parse(currentDocumentJson);
+            currentIds = ExtractReferencedMediaIds(currentDocument.RootElement);
+        }
+
+        var introducedIds = nextIds.Except(currentIds).ToArray();
+        if (introducedIds.Length == 0)
+        {
+            return;
+        }
+
+        var resolved = await _media.ResolveAsync(introducedIds, caller, cancellationToken);
+        var byId = resolved.ToDictionary(item => item.MediaId);
+        foreach (var mediaId in introducedIds)
+        {
+            var resolution = byId.GetValueOrDefault(mediaId);
+            if (resolution is null || resolution.Availability == MediaResolutionAvailability.Missing)
+            {
+                throw DomainException.BadRequest($"Timeline references media {mediaId} that was not found.");
+            }
+
+            if (resolution.Availability == MediaResolutionAvailability.Deleted)
+            {
+                throw DomainException.BadRequest($"Timeline references media {mediaId} that is in Trash.");
+            }
+
+            if (resolution.Availability == MediaResolutionAvailability.Inaccessible)
+            {
+                throw DomainException.Forbidden($"You do not have access to media {mediaId}.");
+            }
+
+            if (resolution.Media is null)
+            {
+                throw DomainException.BadRequest($"Timeline references media {mediaId} that cannot be used.");
+            }
+        }
     }
 
     private static (string BucketName, string ObjectKey)? PreferredRenderSource(MediaSummary media)

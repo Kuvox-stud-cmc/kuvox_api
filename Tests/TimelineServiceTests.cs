@@ -161,6 +161,54 @@ public sealed class TimelineServiceTests
     }
 
     [Fact]
+    public async Task SaveCurrentDocumentAsync_rejects_new_inaccessible_media()
+    {
+        var mediaId = Guid.NewGuid();
+        var repository = new FakeTimelineRepository();
+        var media = new FakeMediaApi
+        {
+            Resolutions =
+            [
+                new MediaResolution(mediaId, MediaKind.Video, MediaResolutionAvailability.Inaccessible, null),
+            ],
+        };
+        var service = CreateService(repository, media: media);
+
+        var error = await Assert.ThrowsAsync<DomainException>(() => service.SaveCurrentDocumentAsync(
+            ProjectId,
+            Caller,
+            SaveRequest(ProjectId, 0, documentJson: DocumentWithMedia(ProjectId, mediaId))));
+
+        Assert.Equal(StatusCodes.Status403Forbidden, error.StatusCode);
+        Assert.Empty(repository.Revisions);
+    }
+
+    [Fact]
+    public async Task SaveCurrentDocumentAsync_allows_existing_inaccessible_media_to_remain()
+    {
+        var mediaId = Guid.NewGuid();
+        var document = DocumentWithMedia(ProjectId, mediaId);
+        var repository = new FakeTimelineRepository();
+        var timeline = repository.AddTimeline(ProjectId);
+        repository.AddRevision(timeline.Id, 1, document);
+        var media = new FakeMediaApi
+        {
+            Resolutions =
+            [
+                new MediaResolution(mediaId, MediaKind.Video, MediaResolutionAvailability.Inaccessible, null),
+            ],
+        };
+        var service = CreateService(repository, media: media);
+
+        var result = await service.SaveCurrentDocumentAsync(
+            ProjectId,
+            Caller,
+            SaveRequest(ProjectId, 1, documentJson: document));
+
+        Assert.Equal(2, result.RevisionNumber);
+    }
+
+    [Fact]
     public async Task RequestRenderAsync_queues_job_for_latest_revision()
     {
         var mediaId = Guid.Parse("33333333-3333-3333-3333-333333333333");
@@ -535,9 +583,13 @@ public sealed class TimelineServiceTests
         return (new EditorDocumentCache(business, new CacheKeyFactory(options), Options.Create(options)), store);
     }
 
-    private static SaveTimelineDocumentRequest SaveRequest(Guid projectId, int baseRevisionNumber, string operationsJson = "[]") =>
+    private static SaveTimelineDocumentRequest SaveRequest(
+        Guid projectId,
+        int baseRevisionNumber,
+        string operationsJson = "[]",
+        string? documentJson = null) =>
         new(
-            Json(DocumentJson(projectId)),
+            Json(documentJson ?? DocumentJson(projectId)),
             Json(operationsJson),
             baseRevisionNumber,
             1,
