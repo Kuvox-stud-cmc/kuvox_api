@@ -244,6 +244,59 @@ public sealed class TimelineServiceTests
     }
 
     [Fact]
+    public async Task RequestRenderAsync_accepts_adaptive_portrait_dimensions()
+    {
+        var mediaId = Guid.NewGuid();
+        var repository = new FakeTimelineRepository();
+        var timeline = repository.AddTimeline(ProjectId);
+        repository.AddRevision(timeline.Id, 1, DocumentWithMedia(ProjectId, mediaId, 1080, 1920));
+        var service = CreateService(repository);
+
+        var result = await service.RequestRenderAsync(
+            timeline.Id,
+            Caller,
+            new RenderTimelineRequest(timeline.Id, 1, Json("""{"format":"mp4","width":720,"height":1280,"frameRate":30,"quality":"standard"}""")));
+
+        Assert.Equal("queued", result.Status);
+        Assert.Single(repository.RenderJobs);
+    }
+
+    [Fact]
+    public async Task RequestRenderAsync_rejects_dimensions_that_change_saved_aspect()
+    {
+        var mediaId = Guid.NewGuid();
+        var repository = new FakeTimelineRepository();
+        var timeline = repository.AddTimeline(ProjectId);
+        repository.AddRevision(timeline.Id, 1, DocumentWithMedia(ProjectId, mediaId, 1080, 1920));
+        var service = CreateService(repository);
+
+        var error = await Assert.ThrowsAsync<DomainException>(() => service.RequestRenderAsync(
+            timeline.Id,
+            Caller,
+            new RenderTimelineRequest(timeline.Id, 1, Json("""{"format":"mp4","width":1280,"height":720,"frameRate":30,"quality":"standard"}"""))));
+
+        Assert.Equal(StatusCodes.Status400BadRequest, error.StatusCode);
+        Assert.Empty(repository.RenderJobs);
+    }
+
+    [Fact]
+    public async Task RequestRenderAsync_rejects_odd_dimensions()
+    {
+        var repository = new FakeTimelineRepository();
+        var timeline = repository.AddTimeline(ProjectId);
+        repository.AddRevision(timeline.Id, 1);
+        var service = CreateService(repository);
+
+        var error = await Assert.ThrowsAsync<DomainException>(() => service.RequestRenderAsync(
+            timeline.Id,
+            Caller,
+            new RenderTimelineRequest(timeline.Id, 1, Json("""{"format":"mp4","width":1919,"height":1080,"frameRate":30,"quality":"standard"}"""))));
+
+        Assert.Equal(StatusCodes.Status400BadRequest, error.StatusCode);
+        Assert.Empty(repository.RenderJobs);
+    }
+
+    [Fact]
     public async Task RequestRenderAsync_rejects_unready_media()
     {
         var mediaId = Guid.Parse("33333333-3333-3333-3333-333333333333");
@@ -452,9 +505,9 @@ public sealed class TimelineServiceTests
     {
         var repository = new FakeTimelineRepository();
         var timeline = repository.AddTimeline(ProjectId);
-        const string olderDocument = """{"projectId":"11111111-1111-1111-1111-111111111111","settings":{"width":1280},"media":{},"tracks":[],"marker":"older"}""";
+        const string olderDocument = """{"projectId":"11111111-1111-1111-1111-111111111111","settings":{"width":1280,"height":720},"media":{},"tracks":[],"marker":"older"}""";
         var older = repository.AddRevision(timeline.Id, 3, olderDocument);
-        repository.AddRevision(timeline.Id, 4, """{"projectId":"11111111-1111-1111-1111-111111111111","settings":{"width":1920},"media":{},"tracks":[],"marker":"newer"}""");
+        repository.AddRevision(timeline.Id, 4, """{"projectId":"11111111-1111-1111-1111-111111111111","settings":{"width":1920,"height":1080},"media":{},"tracks":[],"marker":"newer"}""");
         var service = CreateService(repository);
 
         var result = await service.RequestRenderAsync(
@@ -628,7 +681,11 @@ public sealed class TimelineServiceTests
             },
         });
 
-    private static string DocumentWithMedia(Guid projectId, Guid mediaId) =>
+    private static string DocumentWithMedia(
+        Guid projectId,
+        Guid mediaId,
+        int width = 1920,
+        int height = 1080) =>
         JsonSerializer.Serialize(new
         {
             schemaVersion = 1,
@@ -638,8 +695,8 @@ public sealed class TimelineServiceTests
             updatedAt = "2026-01-01T00:00:00.000Z",
             settings = new
             {
-                width = 1920,
-                height = 1080,
+                width,
+                height,
                 aspectRatio = "16:9",
                 frameRate = 30,
                 previewQuality = "balanced",

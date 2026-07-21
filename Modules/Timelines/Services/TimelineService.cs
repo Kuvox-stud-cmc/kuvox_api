@@ -245,6 +245,8 @@ internal sealed class TimelineService(
 
         var revision = await _timelines.GetRevisionByNumberAsync(timeline.Id, request.RevisionNumber, cancellationToken)
             ?? throw DomainException.NotFound("Timeline revision not found.");
+        using var document = JsonDocument.Parse(revision.DocumentJson);
+        ValidateRenderAspect(request.Settings, document.RootElement);
 
         var now = DateTimeOffset.UtcNow;
         var mediaSources = await ResolveReferencedMediaAsync(revision.DocumentJson, caller, cancellationToken);
@@ -267,7 +269,6 @@ internal sealed class TimelineService(
         };
         renderJob.OutputStorageKey = $"renders/timelines/{timeline.Id}/jobs/{renderJob.Id}.{format}";
 
-        using var document = JsonDocument.Parse(revision.DocumentJson);
         var requested = new RenderingRequestedEvent(
             Guid.CreateVersion7(),
             RenderingRequestedEventType,
@@ -696,9 +697,9 @@ internal sealed class TimelineService(
 
         var width = RequiredInt(settings, "width");
         var height = RequiredInt(settings, "height");
-        if (width <= 0 || height <= 0)
+        if (width <= 0 || height <= 0 || width % 2 != 0 || height % 2 != 0)
         {
-            throw DomainException.BadRequest("Render dimensions must be positive whole pixels.");
+            throw DomainException.BadRequest("Render dimensions must be positive even pixel values.");
         }
 
         var frameRate = RequiredInt(settings, "frameRate");
@@ -711,6 +712,30 @@ internal sealed class TimelineService(
         if (!SupportedRenderQualities.Contains(quality))
         {
             throw DomainException.BadRequest("Render quality must be draft, standard, or high.");
+        }
+    }
+
+    private static void ValidateRenderAspect(JsonElement settings, JsonElement document)
+    {
+        if (!document.TryGetProperty("settings", out var documentSettings)
+            || documentSettings.ValueKind != JsonValueKind.Object)
+        {
+            throw DomainException.BadRequest("Saved timeline settings are required for rendering.");
+        }
+
+        var width = RequiredInt(settings, "width");
+        var height = RequiredInt(settings, "height");
+        var logicalWidth = RequiredInt(documentSettings, "width");
+        var logicalHeight = RequiredInt(documentSettings, "height");
+        if (logicalWidth <= 0 || logicalHeight <= 0)
+        {
+            throw DomainException.BadRequest("Saved timeline dimensions must be positive whole pixels.");
+        }
+
+        var crossProductError = Math.Abs((long)width * logicalHeight - (long)height * logicalWidth);
+        if (crossProductError > Math.Max(logicalWidth, logicalHeight))
+        {
+            throw DomainException.BadRequest("Render dimensions must preserve the saved timeline aspect ratio.");
         }
     }
 
